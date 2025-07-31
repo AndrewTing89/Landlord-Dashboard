@@ -24,7 +24,8 @@ class DiscordService {
       venmoLink,
       dueDate,
       month,
-      year
+      year,
+      trackingId
     } = data;
 
     // Set color based on bill type
@@ -51,6 +52,11 @@ class DiscordService {
           {
             name: '📅 Due Date',
             value: dueDate || 'N/A',
+            inline: true
+          },
+          {
+            name: '🏷️ Tracking ID',
+            value: trackingId || 'N/A',
             inline: true
           }
         ],

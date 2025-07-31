@@ -8,9 +8,7 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import Trends from './pages/Trends';
 import Review from './pages/Review';
-import VenmoTracking from './pages/VenmoTracking';
 import SyncManagement from './pages/SyncManagement';
-import EmailReview from './pages/EmailReview';
 import PaymentTracking from './pages/PaymentTracking';
 import PaymentTrackingFixed from './pages/PaymentTrackingFixed';
 import PaymentTrackingMinimal from './pages/PaymentTrackingMinimal';
@@ -19,7 +17,6 @@ import PaymentTrackingDebug from './pages/PaymentTrackingDebug';
 import PaymentTrackingGradual from './pages/PaymentTrackingGradual';
 import PaymentTrackingSimpleCards from './pages/PaymentTrackingSimpleCards';
 import EmailSyncManagement from './pages/EmailSyncManagement';
-import VenmoEmailTracker from './pages/VenmoEmailTracker';
 
 function App() {
   return (
@@ -32,9 +29,6 @@ function App() {
           <Route path="review" element={<Review />} />
           <Route path="payment-tracking" element={<PaymentTrackingSimpleCards />} />
           <Route path="payments" element={<PaymentRequests />} />
-          <Route path="venmo" element={<VenmoTracking />} />
-          <Route path="email-review" element={<EmailReview />} />
-          <Route path="venmo-email-tracker" element={<VenmoEmailTracker />} />
           <Route path="reports" element={<Reports />} />
           <Route path="trends" element={<Trends />} />
           <Route path="sync" element={<SyncManagement />} />

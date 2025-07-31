@@ -1,6 +1,7 @@
 const { google } = require('googleapis');
 const db = require('../db/connection');
 const gmailConfig = require('../../config/gmail.config');
+const { extractTrackingId } = require('../utils/trackingId');
 
 class GmailService {
   constructor() {
@@ -246,6 +247,15 @@ class GmailService {
       parsed.email_type = 'request_reminder';
     } else if (email.subject.includes('cancelled the request')) {
       parsed.email_type = 'request_cancelled';
+    }
+    
+    // Extract tracking ID from subject, body, or note
+    const trackingId = extractTrackingId(email.subject) || 
+                      extractTrackingId(email.body) || 
+                      extractTrackingId(parsed.venmo_note);
+    
+    if (trackingId) {
+      parsed.tracking_id = trackingId;
     }
 
     // Extract date from email body if possible

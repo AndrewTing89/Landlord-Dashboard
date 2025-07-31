@@ -3,6 +3,7 @@ const { sendSMS } = require('./notificationService');
 const roommateConfig = require('../../config/roommate.config');
 const moment = require('moment');
 const discordService = require('./discordService');
+const { generateTrackingId } = require('../utils/trackingId');
 
 class VenmoLinkService {
   /**
@@ -60,12 +61,16 @@ class VenmoLinkService {
       
       const formattedDate = moment(paidDate).format('MMM YYYY');
       
-      // Generate payment note
-      const note = roommateConfig.messageTemplates[bill.bill_type](
+      // Generate tracking ID for this request
+      const trackingId = generateTrackingId(bill.month, bill.year, bill.bill_type);
+      
+      // Generate payment note with tracking ID
+      const baseNote = roommateConfig.messageTemplates[bill.bill_type](
         totalAmount,
         roommateShare,
         formattedDate
       );
+      const noteWithTracking = `${baseNote} [${trackingId}]`;
       
       // Create payment request record
       const paymentRequest = await db.insert('payment_requests', {
@@ -79,10 +84,11 @@ class VenmoLinkService {
         charge_date: paidDate,
         month: bill.month,
         year: bill.year,
+        tracking_id: trackingId,
         venmo_link: this.generateVenmoLink(
           roommateConfig.roommate.venmoUsername,
           roommateShare,
-          note
+          noteWithTracking
         )
       });
       
@@ -136,7 +142,8 @@ class VenmoLinkService {
           venmoLink: venmoLink,
           dueDate: bill.due_date ? new Date(bill.due_date).toLocaleDateString() : null,
           month: bill.month,
-          year: bill.year
+          year: bill.year,
+          trackingId: trackingId
         };
         
         await discordService.sendPaymentRequest(notificationData);

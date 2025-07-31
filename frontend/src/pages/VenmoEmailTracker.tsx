@@ -65,6 +65,7 @@ interface PaymentRequest {
   bill_type: string;
   month: number;
   year: number;
+  tracking_id?: string;
 }
 
 interface VenmoEmail {
@@ -78,6 +79,7 @@ interface VenmoEmail {
   received_date: string;
   matched: boolean;
   payment_request_id?: number;
+  tracking_id?: string;
 }
 
 interface TimelineData {
@@ -192,11 +194,21 @@ const VenmoEmailTracker: React.FC = () => {
       <Card>
         <CardContent>
           <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-            <Chip
-              label={payment_request.status}
-              color={getStatusColor(payment_request.status)}
-              size="small"
-            />
+            <Box display="flex" gap={1}>
+              <Chip
+                label={payment_request.status}
+                color={getStatusColor(payment_request.status)}
+                size="small"
+              />
+              {payment_request.tracking_id && (
+                <Chip
+                  label={payment_request.tracking_id}
+                  size="small"
+                  variant="outlined"
+                  sx={{ fontSize: '0.7rem' }}
+                />
+              )}
+            </Box>
           </Box>
           
           <Typography variant="h5" gutterBottom>
@@ -214,23 +226,50 @@ const VenmoEmailTracker: React.FC = () => {
               },
             }}
           >
-            {/* Request Created */}
-            <TimelineItem>
-              <TimelineOppositeContent color="textSecondary">
-                {format(new Date(payment_request.request_date), 'MMM d')}
-              </TimelineOppositeContent>
-              <TimelineSeparator>
-                <TimelineDot color="primary">
-                  <PaymentIcon />
-                </TimelineDot>
-                <TimelineConnector />
-              </TimelineSeparator>
-              <TimelineContent>
-                <Typography variant="body2">
-                  Request created
-                </Typography>
-              </TimelineContent>
-            </TimelineItem>
+            {/* Request Created (only show if we have the actual request email) */}
+            {emails.some(e => e.email_type === 'request_sent') ? (
+              <TimelineItem>
+                <TimelineOppositeContent color="textSecondary">
+                  {format(new Date(payment_request.request_date), 'MMM d')}
+                </TimelineOppositeContent>
+                <TimelineSeparator>
+                  <TimelineDot color="primary">
+                    <PaymentIcon />
+                  </TimelineDot>
+                  <TimelineConnector />
+                </TimelineSeparator>
+                <TimelineContent>
+                  <Typography variant="body2">
+                    Request created
+                  </Typography>
+                  {payment_request.tracking_id && (
+                    <Typography variant="caption" color="text.secondary">
+                      ID: {payment_request.tracking_id}
+                    </Typography>
+                  )}
+                </TimelineContent>
+              </TimelineItem>
+            ) : (
+              <TimelineItem>
+                <TimelineOppositeContent color="textSecondary">
+                  {format(new Date(payment_request.request_date), 'MMM d')}
+                </TimelineOppositeContent>
+                <TimelineSeparator>
+                  <TimelineDot sx={{ bgcolor: 'grey.400' }}>
+                    <PaymentIcon />
+                  </TimelineDot>
+                  <TimelineConnector />
+                </TimelineSeparator>
+                <TimelineContent>
+                  <Typography variant="body2" color="text.secondary">
+                    Request pending
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Waiting for Venmo email confirmation
+                  </Typography>
+                </TimelineContent>
+              </TimelineItem>
+            )}
 
             {/* Request Sent Email */}
             {emails.filter(e => e.email_type === 'request_sent').map((email, idx) => (
@@ -251,6 +290,11 @@ const VenmoEmailTracker: React.FC = () => {
                   <Typography variant="caption" color="text.secondary">
                     ${email.venmo_amount}
                   </Typography>
+                  {email.tracking_id && (
+                    <Typography variant="caption" display="block" color="primary">
+                      ID: {email.tracking_id}
+                    </Typography>
+                  )}
                 </TimelineContent>
               </TimelineItem>
             ))}
@@ -274,6 +318,11 @@ const VenmoEmailTracker: React.FC = () => {
                   <Typography variant="caption" color="text.secondary">
                     ${email.venmo_amount}
                   </Typography>
+                  {email.tracking_id && (
+                    <Typography variant="caption" display="block" color="primary">
+                      ID: {email.tracking_id}
+                    </Typography>
+                  )}
                   {email.venmo_note && (
                     <Typography variant="caption" display="block" color="text.secondary">
                       {email.venmo_note}

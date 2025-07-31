@@ -57,6 +57,7 @@ export interface PaymentRequest {
   bill_total_amount?: string | number | null;
   total_amount?: string | number | null;
   company_name?: string | null;
+  tracking_id?: string | null;
   created_at: string;
   updated_at: string;
 }

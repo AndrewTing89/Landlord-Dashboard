@@ -62,6 +62,7 @@ export default function Review() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [processing, setProcessing] = useState<{ [key: number]: boolean }>({});
+  const [filterCategory, setFilterCategory] = useState<string | null>(null);
 
   useEffect(() => {
     fetchPendingTransactions();
@@ -184,10 +185,32 @@ export default function Review() {
     setLoading(true);
     
     try {
-      for (const tx of transactionsToApprove) {
-        await handleApprove(tx);
+      const response = await fetch('http://localhost:3002/api/review/bulk-approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transaction_ids: transactionsToApprove.map(tx => tx.id),
+          expense_type: type
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to bulk approve');
       }
-      setSuccess(`Approved ${transactionsToApprove.length} ${type} transactions`);
+
+      const result = await response.json();
+      setSuccess(result.message);
+      
+      // Remove approved transactions from the list
+      const approvedIds = transactionsToApprove.map(tx => tx.id);
+      setTransactions(transactions.filter(t => !approvedIds.includes(t.id)));
+      setTotal(total - approvedIds.length);
+      
+      // Clear filter if all transactions of this type were approved
+      if (filterCategory === type) {
+        setFilterCategory(null);
+      }
     } catch (err) {
       console.error('Error bulk approving:', err);
       setError('Failed to bulk approve transactions');
@@ -229,6 +252,11 @@ export default function Review() {
   }
 
   const typesSummary = getTransactionsByType();
+  
+  // Filter transactions based on selected category
+  const filteredTransactions = filterCategory
+    ? transactions.filter(tx => (tx.suggested_expense_type || 'uncategorized') === filterCategory)
+    : transactions;
 
   return (
     <Box>
@@ -266,8 +294,33 @@ export default function Review() {
 
       {/* Summary Cards */}
       <Box display="flex" gap={2} mb={3} flexWrap="wrap">
+        {filterCategory && (
+          <Button
+            variant="text"
+            onClick={() => setFilterCategory(null)}
+            sx={{ mb: 1 }}
+          >
+            Clear Filter ({filterCategory})
+          </Button>
+        )}
+      </Box>
+      <Box display="flex" gap={2} mb={3} flexWrap="wrap">
         {Object.entries(typesSummary).map(([type, count]) => (
-          <Card key={type} sx={{ minWidth: 150 }}>
+          <Card 
+            key={type} 
+            sx={{ 
+              minWidth: 150,
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+              border: filterCategory === type ? 2 : 0,
+              borderColor: 'primary.main',
+              '&:hover': {
+                transform: 'translateY(-2px)',
+                boxShadow: 3
+              }
+            }}
+            onClick={() => setFilterCategory(filterCategory === type ? null : type)}
+          >
             <CardContent>
               <Typography variant="h6">{count}</Typography>
               <Typography variant="body2" color="textSecondary" gutterBottom>
@@ -277,7 +330,10 @@ export default function Review() {
                 <Button
                   size="small"
                   variant="outlined"
-                  onClick={() => handleBulkApprove(type)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleBulkApprove(type);
+                  }}
                   startIcon={<CheckCircleIcon />}
                 >
                   Approve All
@@ -302,7 +358,7 @@ export default function Review() {
             </TableRow>
           </TableHead>
           <TableBody>
-            {transactions.map((transaction) => {
+            {filteredTransactions.map((transaction) => {
               const isIncome = transaction.amount > 0;
               const isProcessing = processing[transaction.id];
               
@@ -396,14 +452,14 @@ export default function Review() {
         />
       </TableContainer>
 
-      {transactions.length === 0 && !loading && (
+      {filteredTransactions.length === 0 && !loading && (
         <Box textAlign="center" py={5}>
           <CheckCircleIcon sx={{ fontSize: 60, color: 'success.main', mb: 2 }} />
           <Typography variant="h6" gutterBottom>
-            All caught up!
+            {filterCategory ? `No ${filterCategory} transactions` : 'All caught up!'}
           </Typography>
           <Typography variant="body2" color="textSecondary">
-            No transactions need review.
+            {filterCategory ? 'Try selecting a different category' : 'No transactions need review.'}
           </Typography>
         </Box>
       )}

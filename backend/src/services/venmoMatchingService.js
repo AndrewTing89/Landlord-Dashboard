@@ -1,5 +1,6 @@
 const db = require('../db/connection');
 const gmailConfig = require('../../config/gmail.config');
+const { extractTrackingId } = require('../utils/trackingId');
 
 class VenmoMatchingService {
   /**
@@ -58,6 +59,52 @@ class VenmoMatchingService {
     console.log(`🔍 Attempting to match payment email: $${emailRecord.venmo_amount} from ${emailRecord.venmo_actor}`);
     
     try {
+      // First, try to match by tracking ID if available
+      if (emailRecord.tracking_id) {
+        console.log(`🏷️  Found tracking ID in email: ${emailRecord.tracking_id}`);
+        
+        const trackingMatch = await db.getOne(`
+          SELECT pr.*, vpr.recipient_name, ub.bill_type
+          FROM payment_requests pr
+          LEFT JOIN venmo_payment_requests vpr ON pr.utility_bill_id = vpr.utility_bill_id
+          LEFT JOIN utility_bills ub ON pr.utility_bill_id = ub.id
+          WHERE pr.tracking_id = $1
+            AND pr.status = 'pending'
+        `, [emailRecord.tracking_id]);
+        
+        if (trackingMatch) {
+          console.log(`✅ Found exact match via tracking ID: Payment Request #${trackingMatch.id}`);
+          
+          // Update payment request as paid
+          await db.query(`
+            UPDATE payment_requests 
+            SET status = 'paid', 
+                paid_date = $1,
+                updated_at = NOW()
+            WHERE id = $2
+          `, [emailRecord.received_date, trackingMatch.id]);
+          
+          // Update email with match
+          await db.query(`
+            UPDATE venmo_emails 
+            SET payment_request_id = $1, 
+                matched = true,
+                confidence_score = 1.0
+            WHERE id = $2
+          `, [trackingMatch.id, emailRecord.id]);
+          
+          return { 
+            matched: true, 
+            payment_request_id: trackingMatch.id,
+            confidence: 1.0,
+            match_method: 'tracking_id'
+          };
+        }
+      }
+      
+      // If no tracking ID match, fall back to fuzzy matching
+      console.log('🔍 No tracking ID match, falling back to fuzzy matching...');
+      
       // Find potential payment request matches
       const timeWindow = new Date(emailRecord.received_date);
       timeWindow.setHours(timeWindow.getHours() - gmailConfig.matching.timeWindowHours);

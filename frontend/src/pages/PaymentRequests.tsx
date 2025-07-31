@@ -19,6 +19,17 @@ import {
   ListItemText,
   useMediaQuery,
   useTheme,
+  Tabs,
+  Tab,
+  Badge,
+  Drawer,
+  Stepper,
+  Step,
+  StepLabel,
+  StepConnector,
+  StepIconProps,
+  styled,
+  stepConnectorClasses,
 } from '@mui/material';
 import {
   ContentCopy as CopyIcon,
@@ -30,13 +41,61 @@ import {
   Send as SendIcon,
   Done as DoneIcon,
   Sms as SmsIcon,
+  Payment as PaymentIcon,
+  History as HistoryIcon,
+  LinkOff as LinkOffIcon,
+  Timeline as TimelineIcon,
+  Close as CloseIcon,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { apiService } from '../services/api';
 import { PaymentRequest } from '../types';
+import axios from 'axios';
+import config from '../config';
+
+interface VenmoEmail {
+  id: number;
+  gmail_message_id: string;
+  email_type: 'payment_received' | 'request_sent' | 'request_reminder' | 'request_cancelled';
+  subject: string;
+  venmo_actor: string;
+  venmo_amount: number;
+  venmo_note?: string;
+  received_date: string;
+  matched: boolean;
+  payment_request_id?: number;
+  tracking_id?: string;
+}
+
+// Custom styled components for status stepper
+const StatusConnector = styled(StepConnector)(({ theme }) => ({
+  [`&.${stepConnectorClasses.alternativeLabel}`]: {
+    top: 10,
+  },
+  [`&.${stepConnectorClasses.active}`]: {
+    [`& .${stepConnectorClasses.line}`]: {
+      backgroundColor: theme.palette.primary.main,
+    },
+  },
+  [`&.${stepConnectorClasses.completed}`]: {
+    [`& .${stepConnectorClasses.line}`]: {
+      backgroundColor: theme.palette.primary.main,
+    },
+  },
+  [`& .${stepConnectorClasses.line}`]: {
+    height: 2,
+    border: 0,
+    backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[800] : '#eaeaf0',
+    borderRadius: 1,
+  },
+}));
 
 export default function PaymentRequests() {
+  const [tabValue, setTabValue] = useState(0);
   const [paymentRequests, setPaymentRequests] = useState<PaymentRequest[]>([]);
+  const [allEmails, setAllEmails] = useState<VenmoEmail[]>([]);
+  const [unmatchedEmails, setUnmatchedEmails] = useState<VenmoEmail[]>([]);
+  const [emailsByRequest, setEmailsByRequest] = useState<Record<number, VenmoEmail[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedRequest, setSelectedRequest] = useState<PaymentRequest | null>(null);
@@ -46,21 +105,47 @@ export default function PaymentRequests() {
   const [sendingSmsId, setSendingSmsId] = useState<number | null>(null);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [requestToMarkPaid, setRequestToMarkPaid] = useState<PaymentRequest | null>(null);
+  const [timelineDrawerOpen, setTimelineDrawerOpen] = useState(false);
+  const [selectedTimelineRequest, setSelectedTimelineRequest] = useState<PaymentRequest | null>(null);
   
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   useEffect(() => {
-    fetchPaymentRequests();
+    fetchAllData();
   }, []);
 
-  const fetchPaymentRequests = async () => {
+  const fetchAllData = async () => {
     try {
       setLoading(true);
       setError(null);
       
-      const response = await apiService.getPaymentRequests();
-      setPaymentRequests(response.data);
+      // Fetch all data in parallel
+      const [requestsRes, emailsRes, unmatchedRes] = await Promise.all([
+        apiService.getPaymentRequests(),
+        axios.get(`${config.api.baseURL}/api/venmo-emails`),
+        axios.get(`${config.api.baseURL}/api/gmail/unmatched`)
+      ]);
+
+      const requests = requestsRes.data || [];
+      const emails = emailsRes.data || [];
+      const unmatched = unmatchedRes.data?.data || [];
+
+      setPaymentRequests(requests);
+      setAllEmails(emails);
+      setUnmatchedEmails(unmatched);
+
+      // Group emails by payment request
+      const emailsMap: Record<number, VenmoEmail[]> = {};
+      emails.forEach((email: VenmoEmail) => {
+        if (email.payment_request_id) {
+          if (!emailsMap[email.payment_request_id]) {
+            emailsMap[email.payment_request_id] = [];
+          }
+          emailsMap[email.payment_request_id].push(email);
+        }
+      });
+      setEmailsByRequest(emailsMap);
     } catch (err) {
       console.error('Error fetching payment requests:', err);
       setError('Failed to load payment requests');
@@ -96,7 +181,7 @@ export default function PaymentRequests() {
       const response = await apiService.checkPaymentEmails();
       if (response.data.success) {
         // Refresh payment requests to show any updates
-        await fetchPaymentRequests();
+        await fetchAllData();
       }
     } catch (err) {
       console.error('Error checking emails:', err);
@@ -150,7 +235,7 @@ export default function PaymentRequests() {
         setCopiedId(request.id);
         setTimeout(() => setCopiedId(null), 3000);
         // Refresh the list to show updated status
-        fetchPaymentRequests();
+        fetchAllData();
       }
     } catch (err) {
       console.error('Error sending SMS:', err);
@@ -210,6 +295,38 @@ export default function PaymentRequests() {
     );
   };
 
+  // Get payment status steps based on emails
+  const getPaymentStatus = (request: PaymentRequest) => {
+    const emails = emailsByRequest[request.id] || [];
+    const hasRequestSent = emails.some(e => e.email_type === 'request_sent');
+    const hasPaymentReceived = emails.some(e => e.email_type === 'payment_received');
+    
+    const steps = [
+      { 
+        label: 'Record Created',
+        completed: true,
+        active: !hasRequestSent && !hasPaymentReceived
+      },
+      { 
+        label: hasRequestSent ? 'Request: Confirmed' : 'Request: Pending',
+        completed: hasRequestSent || hasPaymentReceived,
+        active: hasRequestSent && !hasPaymentReceived
+      },
+      { 
+        label: hasPaymentReceived ? 'Payment: Received' : 'Payment: Pending',
+        completed: hasPaymentReceived,
+        active: hasRequestSent && !hasPaymentReceived
+      }
+    ];
+    
+    return steps;
+  };
+
+  const openTimelineDrawer = (request: PaymentRequest) => {
+    setSelectedTimelineRequest(request);
+    setTimelineDrawerOpen(true);
+  };
+
   // Group requests by month
   const groupedRequests = paymentRequests.reduce((acc, request) => {
     // Use the bill's month/year for grouping
@@ -253,7 +370,7 @@ export default function PaymentRequests() {
           >
             Check Emails
           </Button>
-          <IconButton onClick={fetchPaymentRequests}>
+          <IconButton onClick={fetchAllData}>
             <RefreshIcon />
           </IconButton>
         </Box>
@@ -261,31 +378,71 @@ export default function PaymentRequests() {
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
 
-      {isMobile && (
-        <Alert severity="info" sx={{ mb: 2 }}>
-          Tap the payment buttons to open requests directly in Venmo!
-        </Alert>
-      )}
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+        <Tabs value={tabValue} onChange={(_, newValue) => setTabValue(newValue)}>
+          <Tab 
+            label={
+              <Badge badgeContent={paymentRequests.filter(r => r.status !== 'paid').length} color="primary">
+                Active Requests
+              </Badge>
+            } 
+            icon={<PaymentIcon />} 
+            iconPosition="start" 
+          />
+          <Tab 
+            label={
+              <Badge badgeContent={allEmails.length} color="default">
+                Email Activity
+              </Badge>
+            } 
+            icon={<EmailIcon />} 
+            iconPosition="start" 
+          />
+          <Tab 
+            label={
+              <Badge badgeContent={unmatchedEmails.length} color="error">
+                Unmatched
+              </Badge>
+            } 
+            icon={<LinkOffIcon />} 
+            iconPosition="start" 
+          />
+          <Tab 
+            label="History" 
+            icon={<HistoryIcon />} 
+            iconPosition="start" 
+          />
+        </Tabs>
+      </Box>
 
-      {paymentRequests.some(r => r.status === 'pending') && (
-        <Alert severity="info" sx={{ mb: 2 }}>
-          <Typography variant="body2">
-            Payments are automatically checked twice daily (9 AM & 6 PM). 
-            You can also use the "Check Emails" button to check manually anytime.
-          </Typography>
-        </Alert>
-      )}
+      {/* Tab 0: Active Requests */}
+      {tabValue === 0 && (
+        <>
+          {isMobile && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Tap the payment buttons to open requests directly in Venmo!
+            </Alert>
+          )}
 
-      {Object.entries(groupedRequests).length === 0 ? (
-        <Card>
-          <CardContent>
-            <Typography variant="body1" color="textSecondary" align="center">
-              No payment requests found. They will appear here after utility bills are processed.
-            </Typography>
-          </CardContent>
-        </Card>
-      ) : (
-        Object.entries(groupedRequests)
+          {paymentRequests.some(r => r.status === 'pending') && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              <Typography variant="body2">
+                Payments are automatically checked twice daily (9 AM & 6 PM). 
+                You can also use the "Check Emails" button to check manually anytime.
+              </Typography>
+            </Alert>
+          )}
+
+          {Object.entries(groupedRequests).length === 0 ? (
+            <Card>
+              <CardContent>
+                <Typography variant="body1" color="textSecondary" align="center">
+                  No payment requests found. They will appear here after utility bills are processed.
+                </Typography>
+              </CardContent>
+            </Card>
+          ) : (
+            Object.entries(groupedRequests)
           .sort((a, b) => {
             // Sort by year-month in descending order
             const [yearA, monthA] = a[0].split('-').map(Number);
@@ -338,6 +495,14 @@ export default function PaymentRequests() {
                               </Typography>
                               <Box display="flex" alignItems="center" gap={1} flexWrap="wrap" mb={1}>
                                 {getBillTypeChip(request.bill_type)}
+                                {request.tracking_id && (
+                                  <Chip
+                                    label={request.tracking_id}
+                                    size="small"
+                                    variant="outlined"
+                                    sx={{ fontSize: '0.7rem' }}
+                                  />
+                                )}
                               </Box>
                               <Typography variant="body2" color="textSecondary">
                                 Bill Date: <strong>{request.charge_date ? format(new Date(request.charge_date), 'MMM dd, yyyy') : 'N/A'}</strong>
@@ -349,18 +514,34 @@ export default function PaymentRequests() {
                               )}
                             </Box>
                             
-                            {request.status === 'pending' && (
-                              <Box sx={{ mb: 1 }}>
-                                <Typography variant="body2" color="text.secondary">
-                                  Status: Payment requested
+                            {/* Status Indicator */}
+                            <Box sx={{ mb: 2, mt: 1 }}>
+                              <Stepper 
+                                activeStep={getPaymentStatus(request).findIndex(s => s.active)} 
+                                alternativeLabel
+                                connector={<StatusConnector />}
+                                sx={{ 
+                                  '& .MuiStepLabel-label': { 
+                                    fontSize: '0.75rem',
+                                    mt: 0.5
+                                  },
+                                  '& .MuiStepIcon-root': {
+                                    fontSize: '1rem'
+                                  }
+                                }}
+                              >
+                                {getPaymentStatus(request).map((step, index) => (
+                                  <Step key={index} completed={step.completed}>
+                                    <StepLabel>{step.label}</StepLabel>
+                                  </Step>
+                                ))}
+                              </Stepper>
+                              {request.due_date && (
+                                <Typography variant="caption" color="error" sx={{ display: 'block', textAlign: 'center', mt: 1 }}>
+                                  Due: {format(new Date(request.due_date), 'MMM dd')}
                                 </Typography>
-                                {request.due_date && (
-                                  <Typography variant="body2" color="error">
-                                    Due: {format(new Date(request.due_date), 'MMM dd, yyyy')}
-                                  </Typography>
-                                )}
-                              </Box>
-                            )}
+                              )}
+                            </Box>
                             
                             <Box display="flex" gap={1}>
                               <Button
@@ -381,6 +562,13 @@ export default function PaymentRequests() {
                                 title="Open in Venmo"
                               >
                                 <LaunchIcon />
+                              </IconButton>
+                              <IconButton
+                                size="small"
+                                onClick={() => openTimelineDrawer(request)}
+                                title="View timeline"
+                              >
+                                <TimelineIcon />
                               </IconButton>
                               {request.status !== 'paid' && (
                                 <Button
@@ -410,6 +598,8 @@ export default function PaymentRequests() {
               </Card>
             );
           })
+        )}
+        </>
       )}
 
       {/* Desktop instruction dialog */}
@@ -514,6 +704,278 @@ export default function PaymentRequests() {
           </Button>
         </DialogActions>
       </Dialog>
+      
+      {/* Tab 1: Email Activity */}
+      {tabValue === 1 && (
+        <Box>
+          {allEmails.length === 0 ? (
+            <Card>
+              <CardContent>
+                <Typography variant="body1" color="textSecondary" align="center">
+                  No Venmo emails found. Connect Gmail and sync to see email activity.
+                </Typography>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  All Venmo Emails ({allEmails.length})
+                </Typography>
+                <List>
+                  {allEmails.map((email) => (
+                    <ListItem key={email.id} divider>
+                      <ListItemText
+                        primary={email.subject}
+                        secondary={
+                          <>
+                            <Typography component="span" variant="body2">
+                              {format(new Date(email.received_date), 'MMM d, yyyy h:mm a')}
+                            </Typography>
+                            {email.venmo_amount && (
+                              <Typography component="span" variant="body2" sx={{ ml: 2 }}>
+                                Amount: ${email.venmo_amount}
+                              </Typography>
+                            )}
+                            {email.tracking_id && (
+                              <Chip
+                                label={email.tracking_id}
+                                size="small"
+                                sx={{ ml: 1, fontSize: '0.7rem' }}
+                              />
+                            )}
+                          </>
+                        }
+                      />
+                      <Chip
+                        label={email.email_type.replace('_', ' ')}
+                        size="small"
+                        color={email.matched ? 'success' : 'default'}
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              </CardContent>
+            </Card>
+          )}
+        </Box>
+      )}
+      
+      {/* Tab 2: Unmatched */}
+      {tabValue === 2 && (
+        <Box>
+          {unmatchedEmails.length === 0 ? (
+            <Card>
+              <CardContent>
+                <Typography variant="body1" color="textSecondary" align="center">
+                  No unmatched payments! All Venmo emails are matched to payment requests.
+                </Typography>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Unmatched Venmo Payments ({unmatchedEmails.length})
+                </Typography>
+                <Typography variant="body2" color="textSecondary" paragraph>
+                  These payments couldn't be automatically matched to a request. Review and match manually if needed.
+                </Typography>
+                <List>
+                  {unmatchedEmails.map((email) => (
+                    <ListItem key={email.id} divider>
+                      <ListItemText
+                        primary={`${email.venmo_actor} - $${email.venmo_amount}`}
+                        secondary={
+                          <>
+                            {format(new Date(email.received_date), 'MMM d, yyyy h:mm a')}
+                            {email.venmo_note && (
+                              <Typography variant="caption" display="block">
+                                Note: {email.venmo_note}
+                              </Typography>
+                            )}
+                          </>
+                        }
+                      />
+                    </ListItem>
+                  ))}
+                </List>
+              </CardContent>
+            </Card>
+          )}
+        </Box>
+      )}
+      
+      {/* Tab 3: History */}
+      {tabValue === 3 && (
+        <Box>
+          {paymentRequests.filter(r => r.status === 'paid').length === 0 ? (
+            <Card>
+              <CardContent>
+                <Typography variant="body1" color="textSecondary" align="center">
+                  No payment history yet.
+                </Typography>
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Payment History
+                </Typography>
+                <List>
+                  {paymentRequests
+                    .filter(r => r.status === 'paid')
+                    .sort((a, b) => new Date(b.paid_date || 0).getTime() - new Date(a.paid_date || 0).getTime())
+                    .map((request) => (
+                      <ListItem key={request.id} divider>
+                        <ListItemText
+                          primary={`${request.roommate_name} - ${formatCurrency(request.amount)}`}
+                          secondary={
+                            <>
+                              {getBillTypeChip(request.bill_type)}
+                              <Typography component="span" variant="body2" sx={{ ml: 1 }}>
+                                {request.month}/{request.year}
+                              </Typography>
+                              {request.paid_date && (
+                                <Typography component="span" variant="body2" sx={{ ml: 2 }}>
+                                  Paid: {format(new Date(request.paid_date), 'MMM d, yyyy')}
+                                </Typography>
+                              )}
+                            </>
+                          }
+                        />
+                        <CheckCircleIcon color="success" />
+                      </ListItem>
+                    ))}
+                </List>
+              </CardContent>
+            </Card>
+          )}
+        </Box>
+      )}
+      
+      {/* Timeline Drawer */}
+      <Drawer
+        anchor="right"
+        open={timelineDrawerOpen}
+        onClose={() => setTimelineDrawerOpen(false)}
+        sx={{ '& .MuiDrawer-paper': { width: { xs: '100%', sm: 400 } } }}
+      >
+        <Box sx={{ p: 2 }}>
+          <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+            <Typography variant="h6">Payment Timeline</Typography>
+            <IconButton onClick={() => setTimelineDrawerOpen(false)}>
+              <CloseIcon />
+            </IconButton>
+          </Box>
+          
+          {selectedTimelineRequest && (
+            <>
+              <Card sx={{ mb: 2 }}>
+                <CardContent>
+                  <Typography variant="subtitle2" color="textSecondary">
+                    {selectedTimelineRequest.tracking_id}
+                  </Typography>
+                  <Typography variant="h5">
+                    ${selectedTimelineRequest.amount}
+                  </Typography>
+                  <Typography variant="body2">
+                    {selectedTimelineRequest.roommate_name}
+                  </Typography>
+                  {getBillTypeChip(selectedTimelineRequest.bill_type)}
+                </CardContent>
+              </Card>
+              
+              <Box sx={{ position: 'relative' }}>
+                {/* Timeline events */}
+                {(() => {
+                  const emails = emailsByRequest[selectedTimelineRequest.id] || [];
+                  const events = [
+                    {
+                      type: 'created',
+                      date: selectedTimelineRequest.created_at,
+                      label: 'Request Created',
+                      icon: <PaymentIcon />,
+                      color: 'primary'
+                    },
+                    ...emails.map(email => ({
+                      type: email.email_type,
+                      date: email.received_date,
+                      label: email.email_type === 'request_sent' ? 'Venmo Request Sent' :
+                             email.email_type === 'payment_received' ? 'Payment Received' :
+                             email.email_type.replace('_', ' '),
+                      icon: email.email_type === 'payment_received' ? <CheckCircleIcon /> : <EmailIcon />,
+                      color: email.email_type === 'payment_received' ? 'success' : 'info',
+                      details: {
+                        amount: email.venmo_amount,
+                        actor: email.venmo_actor,
+                        note: email.venmo_note
+                      }
+                    }))
+                  ].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+                  
+                  return events.map((event, index) => (
+                    <Box key={index} sx={{ display: 'flex', mb: 3 }}>
+                      <Box sx={{ 
+                        position: 'relative',
+                        '&::after': index < events.length - 1 ? {
+                          content: '""',
+                          position: 'absolute',
+                          left: '50%',
+                          top: 40,
+                          width: 2,
+                          height: 40,
+                          backgroundColor: 'divider',
+                          transform: 'translateX(-50%)'
+                        } : {}
+                      }}>
+                        <Box sx={{ 
+                          width: 40, 
+                          height: 40, 
+                          borderRadius: '50%',
+                          backgroundColor: `${event.color}.light`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: `${event.color}.main`
+                        }}>
+                          {event.icon}
+                        </Box>
+                      </Box>
+                      <Box sx={{ ml: 2, flex: 1 }}>
+                        <Typography variant="subtitle2">{event.label}</Typography>
+                        <Typography variant="caption" color="textSecondary">
+                          {format(new Date(event.date), 'MMM d, yyyy h:mm a')}
+                        </Typography>
+                        {event.details && (
+                          <Box sx={{ mt: 1 }}>
+                            {event.details.amount && (
+                              <Typography variant="body2">
+                                Amount: ${event.details.amount}
+                              </Typography>
+                            )}
+                            {event.details.actor && (
+                              <Typography variant="body2">
+                                From: {event.details.actor}
+                              </Typography>
+                            )}
+                            {event.details.note && (
+                              <Typography variant="caption" color="textSecondary">
+                                Note: {event.details.note}
+                              </Typography>
+                            )}
+                          </Box>
+                        )}
+                      </Box>
+                    </Box>
+                  ));
+                })()}
+              </Box>
+            </>
+          )}
+        </Box>
+      </Drawer>
     </Box>
   );
 }

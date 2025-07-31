@@ -424,7 +424,8 @@ app.post('/api/payment-requests/:id/send-sms', async (req, res) => {
       venmoLink,
       dueDate: request.due_date ? new Date(request.due_date).toLocaleDateString() : 'N/A',
       month: request.month,
-      year: request.year
+      year: request.year,
+      trackingId: request.tracking_id
     };
     
     try {

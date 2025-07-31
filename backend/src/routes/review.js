@@ -129,6 +129,8 @@ router.post('/bulk-approve', async (req, res) => {
   try {
     const { transaction_ids, expense_type } = req.body;
     
+    console.log('Bulk approve request:', { transaction_ids, expense_type });
+    
     if (!Array.isArray(transaction_ids) || transaction_ids.length === 0) {
       return res.status(400).json({ error: 'No transactions provided' });
     }
@@ -137,35 +139,56 @@ router.post('/bulk-approve', async (req, res) => {
     
     try {
       let approved = 0;
+      let errors = [];
       
       for (const id of transaction_ids) {
-        // Get the raw transaction
-        const rawTx = await db.getOne(
-          'SELECT * FROM raw_transactions WHERE id = $1 AND processed = false AND excluded = false',
-          [id]
-        );
-        
-        if (rawTx) {
-          // Insert into main transactions
-          await db.insert('transactions', {
-            plaid_transaction_id: `simplefin_${rawTx.simplefin_id}`,
-            plaid_account_id: rawTx.simplefin_account_id,
-            amount: Math.abs(rawTx.amount),
-            date: rawTx.posted_date,
-            name: rawTx.description,
-            merchant_name: rawTx.suggested_merchant || rawTx.payee,
-            expense_type: expense_type || rawTx.suggested_expense_type || 'other',
-            category: rawTx.category || 'Bulk Approved',
-            subcategory: null
-          });
-          
-          // Mark as processed
-          await db.query(
-            'UPDATE raw_transactions SET processed = true, updated_at = NOW() WHERE id = $1',
+        try {
+          // Get the raw transaction
+          const rawTx = await db.getOne(
+            'SELECT * FROM raw_transactions WHERE id = $1 AND processed = false AND excluded = false',
             [id]
           );
           
-          approved++;
+          if (rawTx) {
+            // Check if transaction already exists
+            const existing = await db.getOne(
+              'SELECT id FROM transactions WHERE plaid_transaction_id = $1',
+              [`simplefin_${rawTx.simplefin_id}`]
+            );
+            
+            if (existing) {
+              console.log(`Transaction already exists: ${rawTx.simplefin_id}`);
+              // Just mark as processed
+              await db.query(
+                'UPDATE raw_transactions SET processed = true, updated_at = NOW() WHERE id = $1',
+                [id]
+              );
+            } else {
+              // Insert into main transactions
+              await db.insert('transactions', {
+                plaid_transaction_id: `simplefin_${rawTx.simplefin_id}`,
+                plaid_account_id: rawTx.simplefin_account_id,
+                amount: Math.abs(rawTx.amount),
+                date: rawTx.posted_date,
+                name: rawTx.description,
+                merchant_name: rawTx.suggested_merchant || rawTx.payee,
+                expense_type: expense_type || rawTx.suggested_expense_type || 'other',
+                category: rawTx.category || 'Bulk Approved',
+                subcategory: null
+              });
+              
+              // Mark as processed
+              await db.query(
+                'UPDATE raw_transactions SET processed = true, updated_at = NOW() WHERE id = $1',
+                [id]
+              );
+            }
+            
+            approved++;
+          }
+        } catch (txError) {
+          console.error(`Error processing transaction ${id}:`, txError);
+          errors.push({ id, error: txError.message });
         }
       }
       
@@ -174,7 +197,8 @@ router.post('/bulk-approve', async (req, res) => {
       res.json({ 
         success: true, 
         message: `Approved ${approved} transactions`,
-        approved: approved
+        approved: approved,
+        errors: errors.length > 0 ? errors : undefined
       });
     } catch (error) {
       await db.query('ROLLBACK');
@@ -182,7 +206,7 @@ router.post('/bulk-approve', async (req, res) => {
     }
   } catch (error) {
     console.error('Error bulk approving transactions:', error);
-    res.status(500).json({ error: 'Failed to bulk approve transactions' });
+    res.status(500).json({ error: error.message || 'Failed to bulk approve transactions' });
   }
 });
 
