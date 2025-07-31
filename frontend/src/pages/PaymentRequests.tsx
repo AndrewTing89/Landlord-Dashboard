@@ -545,16 +545,39 @@ export default function PaymentRequests() {
                                   of {formatCurrency(request.bill_total_amount || 0)} total
                                 </Typography>
                               </Box>
-                              <Chip
-                                label={request.status}
-                                color={getStatusColor(request.status)}
-                                size="small"
-                                icon={
-                                  request.status === 'paid' ? <CheckCircleIcon /> : 
-                                  request.status === 'foregone' ? <LinkOffIcon /> : 
-                                  <ScheduleIcon />
-                                }
-                              />
+                              <Box display="flex" gap={0.5} alignItems="center">
+                                {request.status !== 'paid' && request.status !== 'foregone' && (
+                                  <>
+                                    <Button
+                                      variant="outlined"
+                                      size="small"
+                                      onClick={() => handleMarkPaidClick(request)}
+                                      sx={{ minWidth: 'auto', px: 1, height: 28 }}
+                                    >
+                                      Paid
+                                    </Button>
+                                    <Button
+                                      variant="outlined"
+                                      size="small"
+                                      color="warning"
+                                      onClick={() => handleForegoClick(request)}
+                                      sx={{ minWidth: 'auto', px: 1, height: 28 }}
+                                    >
+                                      Forego
+                                    </Button>
+                                  </>
+                                )}
+                                <Chip
+                                  label={request.status}
+                                  color={getStatusColor(request.status)}
+                                  size="small"
+                                  icon={
+                                    request.status === 'paid' ? <CheckCircleIcon /> : 
+                                    request.status === 'foregone' ? <LinkOffIcon /> : 
+                                    <ScheduleIcon />
+                                  }
+                                />
+                              </Box>
                             </Box>
                             
                             <Box mb={1}>
@@ -611,10 +634,10 @@ export default function PaymentRequests() {
                               )}
                             </Box>
                             
-                            <Box display="flex" gap={1}>
+                            <Box display="flex" gap={1} mt={2}>
                               <Button
                                 variant="contained"
-                                size="small"
+                                size="medium"
                                 fullWidth
                                 startIcon={sendingSmsId === request.id ? <CircularProgress size={16} /> : <SendIcon />}
                                 onClick={() => handleSendSMS(request)}
@@ -623,51 +646,20 @@ export default function PaymentRequests() {
                               >
                                 {sendingSmsId === request.id ? 'Sending...' : 'Send to Discord'}
                               </Button>
-                              <IconButton
-                                size="small"
+                              <Button
+                                variant="contained"
+                                size="medium"
+                                fullWidth
                                 onClick={() => handleOpenVenmo(request)}
-                                disabled={request.status === 'paid'}
-                                title="Open in Venmo"
+                                disabled={request.status === 'paid' || request.status === 'foregone'}
+                                sx={{ 
+                                  backgroundColor: '#3D95CE', 
+                                  '&:hover': { backgroundColor: '#2980b9' },
+                                  fontWeight: 'bold'
+                                }}
                               >
-                                <LaunchIcon />
-                              </IconButton>
-                              <IconButton
-                                size="small"
-                                onClick={() => openTimelineDrawer(request)}
-                                title="View timeline"
-                              >
-                                <TimelineIcon />
-                              </IconButton>
-                              {request.status !== 'paid' && request.status !== 'foregone' && (
-                                <>
-                                  <Button
-                                    variant="outlined"
-                                    size="small"
-                                    onClick={() => handleMarkPaidClick(request)}
-                                    title="Mark as paid manually"
-                                    sx={{ minWidth: 'auto', px: 1 }}
-                                  >
-                                    Paid
-                                  </Button>
-                                  <Button
-                                    variant="outlined"
-                                    size="small"
-                                    color="warning"
-                                    onClick={() => handleForegoClick(request)}
-                                    title="Forego this payment"
-                                    sx={{ minWidth: 'auto', px: 1 }}
-                                  >
-                                    Forego
-                                  </Button>
-                                </>
-                              )}
-                              <IconButton
-                                size="small"
-                                onClick={() => handleCopyLink(request)}
-                                disabled={request.status === 'paid'}
-                              >
-                                {copiedId === request.id ? <CheckCircleIcon /> : <CopyIcon />}
-                              </IconButton>
+                                Open in Venmo
+                              </Button>
                             </Box>
                           </CardContent>
                         </Card>
