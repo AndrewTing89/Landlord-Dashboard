@@ -45,9 +45,9 @@ class SimpleFINService {
       console.log('SimpleFIN access URL length:', this.accessUrl.length);
       console.log('Access URL starts with:', this.accessUrl.substring(0, 30));
       
-      // Default to last 90 days if no start date
+      // Default to last 365 days if no start date
       if (!startDate) {
-        startDate = moment().subtract(90, 'days').unix();
+        startDate = moment().subtract(365, 'days').unix();
       } else {
         startDate = moment(startDate).unix();
       }
@@ -58,7 +58,9 @@ class SimpleFINService {
       const separator = this.accessUrl.includes('?') ? '&' : '?';
       const url = `${this.accessUrl}/accounts${separator}start-date=${startDate}&end-date=${endDate}`;
       
+      const requestedDays = Math.round((endDate - startDate) / 86400);
       console.log(`Fetching transactions from ${moment.unix(startDate).format('YYYY-MM-DD')} to ${moment.unix(endDate).format('YYYY-MM-DD')}`);
+      console.log(`Requesting ${requestedDays} days of transaction history`);
       console.log('Connecting to SimpleFIN...');
       
       // Debug URL construction
@@ -86,12 +88,35 @@ class SimpleFINService {
 
       console.log(`Found ${accounts.length} accounts`);
       
+      // Debug: Check date range of returned transactions
+      let oldestDate = null;
+      let newestDate = null;
+      
       for (const account of accounts) {
         console.log(`Account: ${account.name}, Transactions: ${account.transactions?.length || 0}`);
+        
+        // Find date range of transactions
+        if (account.transactions && account.transactions.length > 0) {
+          const dates = account.transactions.map(t => new Date(t.posted * 1000));
+          const accountOldest = new Date(Math.min(...dates));
+          const accountNewest = new Date(Math.max(...dates));
+          
+          if (!oldestDate || accountOldest < oldestDate) oldestDate = accountOldest;
+          if (!newestDate || accountNewest > newestDate) newestDate = accountNewest;
+          
+          console.log(`  Date range: ${accountOldest.toISOString().split('T')[0]} to ${accountNewest.toISOString().split('T')[0]}`);
+        }
         
         // Process all accounts, not just checking
         const savedCount = await this.saveTransactions(account.transactions || [], account.id);
         totalSaved += savedCount;
+      }
+      
+      if (oldestDate && newestDate) {
+        const daysFetched = Math.round((newestDate - oldestDate) / (1000 * 60 * 60 * 24));
+        console.log(`\n📊 Actual data received spans ${daysFetched} days`);
+        console.log(`   Oldest transaction: ${oldestDate.toISOString().split('T')[0]}`);
+        console.log(`   Newest transaction: ${newestDate.toISOString().split('T')[0]}`);
       }
 
       return {
@@ -165,6 +190,7 @@ class SimpleFINService {
 
           // If auto-approved by rules, also insert into main transactions table
           if (suggestions.auto_approve && !suggestions.excluded) {
+            console.log(`[Auto-Approve] ${transaction.description} -> ${suggestions.expense_type}`);
             await db.insert('transactions', {
               plaid_transaction_id: `simplefin_${transaction.id}`,
               plaid_account_id: accountId,
@@ -192,17 +218,70 @@ class SimpleFINService {
     const description = (transaction.description || '').toLowerCase();
     const payee = (transaction.payee || '').toLowerCase();
     const combined = `${description} ${payee}`;
+    const category = (transaction.category || '').toLowerCase();
 
-    // Check for utilities
-    if (combined.includes('pg&e') || combined.includes('pacific gas') || combined.includes('pge')) {
+    // First check SimpleFIN category data
+    if (category) {
+      // Internet/Cable/Phone services
+      if (category.includes('cable') || category.includes('internet') || 
+          category.includes('telecommunication') || category.includes('phone service')) {
+        return 'internet';
+      }
+      // Utilities
+      else if (category.includes('utilities') || category.includes('electric') || 
+               category.includes('gas')) {
+        // Further classify utilities based on merchant
+        if (combined.includes('pge') || combined.includes('pg&e') || 
+            combined.includes('pacific gas') || combined.includes('electric')) {
+          return 'electricity';
+        } else if (combined.includes('ebmud') || combined.includes('water') || 
+                   combined.includes('great oaks')) {
+          return 'water';
+        } else if (combined.includes('xfinity mobile')) {
+          return 'other'; // Phone service, not internet
+        } else if (combined.includes('comcast') || combined.includes('xfinity')) {
+          return 'internet';
+        }
+        // Default utilities to electricity if can't determine
+        return 'electricity';
+      }
+      // Home improvement/maintenance
+      else if (category.includes('home improvement') || category.includes('home supplies') ||
+               category.includes('hardware') || category.includes('repair')) {
+        return 'maintenance';
+      }
+      // Income/Transfers - likely rent (but not Venmo)
+      else if (category.includes('transfer') || category.includes('deposit') || 
+               category.includes('income')) {
+        // Don't classify Venmo as rent anymore
+        if (!combined.includes('venmo') && transaction.amount > 0 && transaction.amount > 1000) {
+          return 'rent';
+        }
+      }
+    }
+
+    // Fallback to keyword matching if category didn't help
+    // Check for specific Zelle payments first
+    if (combined.includes('zelle') && combined.includes('carlos') && combined.includes('garden')) {
+      return 'landscape';
+    }
+    // Check for Xfinity Mobile first (phone service, not internet)
+    else if (combined.includes('xfinity mobile')) {
+      return 'other'; // Phone service, not internet
+    } else if (combined.includes('comcast') || combined.includes('xfinity')) {
+      return 'internet';
+    } else if (combined.includes('pg&e') || combined.includes('pacific gas') || combined.includes('pge')) {
       return 'electricity';
     } else if (combined.includes('great oaks') || combined.includes('water')) {
       return 'water';
+    } else if (combined.includes('gardener') || combined.includes('landscape') || 
+               combined.includes('lawn') || combined.includes('yard')) {
+      return 'landscape';
     } else if (combined.includes('home depot') || combined.includes('lowes') || 
                combined.includes('repair') || combined.includes('maintenance')) {
       return 'maintenance';
-    } else if (transaction.amount > 0 && transaction.amount > 1500) {
-      // Large credits are likely rent payments
+    } else if (!combined.includes('venmo') && transaction.amount > 0 && transaction.amount > 1500) {
+      // Large credits are likely rent payments (but not Venmo)
       return 'rent';
     } else {
       return 'other';

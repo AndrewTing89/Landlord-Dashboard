@@ -48,7 +48,7 @@ export type ExpenseType =
   | 'electricity' 
   | 'water' 
   | 'maintenance' 
-  | 'yard_maintenance'
+  | 'landscape'
   | 'property_tax'
   | 'insurance'
   | 'internet'

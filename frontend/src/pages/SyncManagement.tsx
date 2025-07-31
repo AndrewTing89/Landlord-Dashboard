@@ -69,7 +69,7 @@ export default function SyncManagement() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncType, setSyncType] = useState<'daily' | 'catch-up' | null>(null);
-  const [catchUpDays, setCatchUpDays] = useState(90);
+  const [catchUpDays, setCatchUpDays] = useState(365);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [confirmSyncType, setConfirmSyncType] = useState<'daily' | 'catch-up' | null>(null);
@@ -438,9 +438,9 @@ export default function SyncManagement() {
               value={catchUpDays}
               onChange={(e) => setCatchUpDays(parseInt(e.target.value) || 90)}
               fullWidth
-              helperText="Default is 90 days. Use more for initial setup."
+              helperText="Bank of America typically provides only ~90 days of history through SimpleFIN, regardless of the value entered."
               InputProps={{
-                inputProps: { min: 1, max: 365 }
+                inputProps: { min: 1 }
               }}
             />
           </Box>

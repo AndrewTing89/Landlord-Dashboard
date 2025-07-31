@@ -219,7 +219,7 @@ router.get('/expense-types', async (req, res) => {
       { value: 'water', label: 'Water' },
       { value: 'internet', label: 'Internet' },
       { value: 'maintenance', label: 'Maintenance' },
-      { value: 'yard_maintenance', label: 'Yard Maintenance' },
+      { value: 'landscape', label: 'Landscape' },
       { value: 'property_tax', label: 'Property Tax' },
       { value: 'insurance', label: 'Insurance' },
       { value: 'other', label: 'Other' }

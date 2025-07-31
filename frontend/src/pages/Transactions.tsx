@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Box,
   Card,
@@ -29,6 +29,10 @@ import {
   InputLabel,
   Select,
   Snackbar,
+  Checkbox,
+  ListItemText,
+  OutlinedInput,
+  SelectChangeEvent,
 } from '@mui/material';
 // Date pickers removed due to dependency issues
 import {
@@ -47,10 +51,9 @@ const expenseTypeColors: Record<string, 'success' | 'error' | 'warning' | 'info'
   water: 'info',
   internet: 'primary',
   maintenance: 'warning',
-  yard_maintenance: 'secondary',
+  landscape: 'secondary',
   property_tax: 'error',
   insurance: 'info',
-  other: 'default',
 };
 
 interface EditDialogState {
@@ -61,7 +64,7 @@ interface EditDialogState {
 
 export default function Transactions() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(25);
@@ -69,7 +72,10 @@ export default function Transactions() {
   // Filters
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
-  const [expenseType, setExpenseType] = useState<ExpenseType | 'all'>('all');
+  const [selectedExpenseTypes, setSelectedExpenseTypes] = useState<string[]>([]);
+  const [excludedExpenseTypes, setExcludedExpenseTypes] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState<string>('');
   const [editDialog, setEditDialog] = useState<EditDialogState>({
     open: false,
     transaction: null,
@@ -78,19 +84,33 @@ export default function Transactions() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
 
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 500); // Wait 500ms after user stops typing
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
   useEffect(() => {
     fetchTransactions();
-  }, [startDate, endDate, expenseType]);
+  }, [startDate, endDate, selectedExpenseTypes, excludedExpenseTypes, debouncedSearchQuery]);
 
   const fetchTransactions = async () => {
     try {
-      setLoading(true);
+      // Only set loading on first load
+      if (transactions.length === 0) {
+        setLoading(true);
+      }
       setError(null);
       
       const params: any = {};
       if (startDate) params.start_date = format(startDate, 'yyyy-MM-dd');
       if (endDate) params.end_date = format(endDate, 'yyyy-MM-dd');
-      if (expenseType !== 'all') params.expense_type = expenseType;
+      if (selectedExpenseTypes.length > 0) params.expense_types = selectedExpenseTypes.join(',');
+      if (excludedExpenseTypes.length > 0) params.exclude_types = excludedExpenseTypes.join(',');
+      if (debouncedSearchQuery) params.search = debouncedSearchQuery;
       
       const response = await apiService.getTransactions(params);
       setTransactions(response.data);
@@ -178,6 +198,7 @@ export default function Transactions() {
     }
   };
 
+  // Show full loading only on initial load
   if (loading && transactions.length === 0) {
     return (
       <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
@@ -236,24 +257,146 @@ export default function Transactions() {
               />
             </Grid>
             <Grid item xs={12} sm={6} md={3}>
+              <FormControl fullWidth>
+                <InputLabel>Expense Types</InputLabel>
+                <Select
+                  multiple
+                  value={selectedExpenseTypes}
+                  onChange={(event: SelectChangeEvent<string[]>) => {
+                    const value = event.target.value;
+                    setSelectedExpenseTypes(typeof value === 'string' ? value.split(',') : value);
+                  }}
+                  input={<OutlinedInput label="Expense Types" />}
+                  renderValue={(selected) => {
+                    if (selected.length === 0) {
+                      return <em>All Types</em>;
+                    }
+                    return `${selected.length} selected`;
+                  }}
+                >
+                  <MenuItem value="rent">
+                    <Checkbox checked={selectedExpenseTypes.indexOf('rent') > -1} />
+                    <ListItemText primary="Rent Income" />
+                  </MenuItem>
+                  <MenuItem value="electricity">
+                    <Checkbox checked={selectedExpenseTypes.indexOf('electricity') > -1} />
+                    <ListItemText primary="Electricity" />
+                  </MenuItem>
+                  <MenuItem value="water">
+                    <Checkbox checked={selectedExpenseTypes.indexOf('water') > -1} />
+                    <ListItemText primary="Water" />
+                  </MenuItem>
+                  <MenuItem value="internet">
+                    <Checkbox checked={selectedExpenseTypes.indexOf('internet') > -1} />
+                    <ListItemText primary="Internet" />
+                  </MenuItem>
+                  <MenuItem value="maintenance">
+                    <Checkbox checked={selectedExpenseTypes.indexOf('maintenance') > -1} />
+                    <ListItemText primary="Maintenance" />
+                  </MenuItem>
+                  <MenuItem value="landscape">
+                    <Checkbox checked={selectedExpenseTypes.indexOf('landscape') > -1} />
+                    <ListItemText primary="Landscape" />
+                  </MenuItem>
+                  <MenuItem value="property_tax">
+                    <Checkbox checked={selectedExpenseTypes.indexOf('property_tax') > -1} />
+                    <ListItemText primary="Property Tax" />
+                  </MenuItem>
+                  <MenuItem value="insurance">
+                    <Checkbox checked={selectedExpenseTypes.indexOf('insurance') > -1} />
+                    <ListItemText primary="Insurance" />
+                  </MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            {selectedExpenseTypes.length > 0 && (
+              <Grid item xs={12} sm={6} md={3}>
+                <Button
+                  variant="text"
+                  onClick={() => setSelectedExpenseTypes([])}
+                  sx={{ mt: 2 }}
+                >
+                  Clear Include ({selectedExpenseTypes.length})
+                </Button>
+              </Grid>
+            )}
+            <Grid item xs={12} sm={6} md={3}>
+              <FormControl fullWidth>
+                <InputLabel>Exclude Types</InputLabel>
+                <Select
+                  multiple
+                  value={excludedExpenseTypes}
+                  onChange={(event: SelectChangeEvent<string[]>) => {
+                    const value = event.target.value;
+                    setExcludedExpenseTypes(typeof value === 'string' ? value.split(',') : value);
+                  }}
+                  input={<OutlinedInput label="Exclude Types" />}
+                  renderValue={(selected) => {
+                    if (selected.length === 0) {
+                      return <em>None excluded</em>;
+                    }
+                    return `Excluding ${selected.length}`;
+                  }}
+                >
+                  <MenuItem value="rent">
+                    <Checkbox checked={excludedExpenseTypes.indexOf('rent') > -1} />
+                    <ListItemText primary="Rent" />
+                  </MenuItem>
+                  <MenuItem value="electricity">
+                    <Checkbox checked={excludedExpenseTypes.indexOf('electricity') > -1} />
+                    <ListItemText primary="Electricity" />
+                  </MenuItem>
+                  <MenuItem value="water">
+                    <Checkbox checked={excludedExpenseTypes.indexOf('water') > -1} />
+                    <ListItemText primary="Water" />
+                  </MenuItem>
+                  <MenuItem value="internet">
+                    <Checkbox checked={excludedExpenseTypes.indexOf('internet') > -1} />
+                    <ListItemText primary="Internet" />
+                  </MenuItem>
+                  <MenuItem value="maintenance">
+                    <Checkbox checked={excludedExpenseTypes.indexOf('maintenance') > -1} />
+                    <ListItemText primary="Maintenance" />
+                  </MenuItem>
+                  <MenuItem value="landscape">
+                    <Checkbox checked={excludedExpenseTypes.indexOf('landscape') > -1} />
+                    <ListItemText primary="Landscape" />
+                  </MenuItem>
+                  <MenuItem value="property_tax">
+                    <Checkbox checked={excludedExpenseTypes.indexOf('property_tax') > -1} />
+                    <ListItemText primary="Property Tax" />
+                  </MenuItem>
+                  <MenuItem value="insurance">
+                    <Checkbox checked={excludedExpenseTypes.indexOf('insurance') > -1} />
+                    <ListItemText primary="Insurance" />
+                  </MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            {excludedExpenseTypes.length > 0 && (
+              <Grid item xs={12} sm={6} md={3}>
+                <Button
+                  variant="text"
+                  onClick={() => setExcludedExpenseTypes([])}
+                  sx={{ mt: 2 }}
+                >
+                  Clear Exclude ({excludedExpenseTypes.length})
+                </Button>
+              </Grid>
+            )}
+            <Grid item xs={12} sm={6} md={3}>
               <TextField
-                select
                 fullWidth
-                label="Expense Type"
-                value={expenseType}
-                onChange={(e) => setExpenseType(e.target.value as ExpenseType | 'all')}
-              >
-                <MenuItem value="all">All Types</MenuItem>
-                <MenuItem value="rent">Rent Income</MenuItem>
-                <MenuItem value="electricity">Electricity</MenuItem>
-                <MenuItem value="water">Water</MenuItem>
-                <MenuItem value="internet">Internet</MenuItem>
-                <MenuItem value="maintenance">Maintenance</MenuItem>
-                <MenuItem value="yard_maintenance">Yard Maintenance</MenuItem>
-                <MenuItem value="property_tax">Property Tax</MenuItem>
-                <MenuItem value="insurance">Insurance</MenuItem>
-                <MenuItem value="other">Other</MenuItem>
-              </TextField>
+                label="Search"
+                placeholder="Search transactions..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                InputProps={{
+                  startAdornment: <FilterListIcon sx={{ mr: 1, color: 'text.secondary' }} />,
+                }}
+                key="search-input"
+                autoComplete="off"
+              />
             </Grid>
           </Grid>
         </CardContent>
@@ -370,10 +513,8 @@ export default function Transactions() {
                   <MenuItem value="water">Water</MenuItem>
                   <MenuItem value="internet">Internet</MenuItem>
                   <MenuItem value="maintenance">Maintenance</MenuItem>
-                  <MenuItem value="yard_maintenance">Yard Maintenance</MenuItem>
                   <MenuItem value="property_tax">Property Tax</MenuItem>
                   <MenuItem value="insurance">Insurance</MenuItem>
-                  <MenuItem value="other">Other</MenuItem>
                 </Select>
               </FormControl>
             </Box>

@@ -42,7 +42,7 @@ const COLORS = {
   electricity: '#0088FE',
   water: '#00C49F',
   maintenance: '#FFBB28',
-  yard_maintenance: '#82ca9d',
+  landscape: '#82ca9d',
   internet: '#8dd1e1',
   property_tax: '#d084d0',
   rent: '#FF8042',
@@ -52,7 +52,7 @@ const COLORS = {
   'Electricity': '#0088FE',
   'Water': '#00C49F',
   'Maintenance': '#FFBB28',
-  'Yard Maintenance': '#82ca9d',
+  'Landscape': '#82ca9d',
   'Internet': '#8dd1e1',
   'Property Tax': '#d084d0',
   'Rent': '#FF8042',
@@ -71,6 +71,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<ExpenseSummary[]>([]);
+  const [ytdTotals, setYtdTotals] = useState<any>(null);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
   const [pendingPayments, setPendingPayments] = useState<PaymentRequest[]>([]);
   const [monthlyData, setMonthlyData] = useState<any[]>([]);
@@ -127,10 +128,18 @@ export default function Dashboard() {
         apiService.getMonthlyComparison(currentYear),
       ]);
 
-      setSummary(summaryRes.data);
-      // Show only property expense transactions (exclude 'other' and 'rent')
+      // Handle the new API response structure
+      if (summaryRes.data.summary) {
+        setSummary(summaryRes.data.summary);
+        setYtdTotals(summaryRes.data.ytdTotals);
+      } else {
+        // Backward compatibility
+        setSummary(summaryRes.data);
+      }
+      
+      // Show only property expense transactions (exclude 'other', 'rent', and 'utility_reimbursement')
       const expenseTransactions = transactionsRes.data.filter(
-        (tx: Transaction) => tx.expense_type !== 'other' && tx.expense_type !== 'rent'
+        (tx: Transaction) => tx.expense_type !== 'other' && tx.expense_type !== 'rent' && tx.expense_type !== 'utility_reimbursement'
       );
       setRecentTransactions(expenseTransactions);
       setPendingPayments(paymentsRes.data);
@@ -170,7 +179,7 @@ export default function Dashboard() {
   const calculateTotals = () => {
     const totalRevenue = parseFloat(summary.find(s => s.expense_type === 'rent')?.total_amount || '0');
     const totalExpenses = summary
-      .filter(s => s.expense_type !== 'rent')
+      .filter(s => s.expense_type !== 'rent' && s.expense_type !== 'utility_reimbursement')
       .reduce((sum, s) => sum + parseFloat(s.total_amount), 0);
     const netIncome = totalRevenue - totalExpenses;
 
@@ -225,7 +234,7 @@ export default function Dashboard() {
     const breakdown: { [key: string]: number } = {};
     
     monthTransactions.forEach(tx => {
-      if (tx.expense_type !== 'rent') {
+      if (tx.expense_type !== 'rent' && tx.expense_type !== 'utility_reimbursement') {
         breakdown[tx.expense_type] = (breakdown[tx.expense_type] || 0) + tx.amount;
       }
     });
@@ -252,7 +261,7 @@ export default function Dashboard() {
 
   const { totalRevenue, totalExpenses, netIncome } = calculateTotals();
   const chartData = summary
-    .filter(s => s.expense_type && s.expense_type !== 'rent' && s.expense_type !== 'other' && parseFloat(s.total_amount) > 0)
+    .filter(s => s.expense_type && s.expense_type !== 'rent' && s.expense_type !== 'other' && s.expense_type !== 'utility_reimbursement' && parseFloat(s.total_amount) > 0)
     .map(s => ({
       name: s.expense_type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '),
       value: parseFloat(s.total_amount),
@@ -350,6 +359,66 @@ export default function Dashboard() {
           </Card>
         </Grid>
       </Grid>
+
+      {/* YTD Totals Section - Only show for 2025 */}
+      {ytdTotals && new Date().getFullYear() === 2025 && (
+        <Card sx={{ mb: 3, backgroundColor: '#f5f5f5' }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              2025 Year-to-Date Summary
+            </Typography>
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={6} md={3}>
+                <Box>
+                  <Typography color="textSecondary" variant="body2">
+                    Expected Rent Income
+                  </Typography>
+                  <Typography variant="h6">
+                    {formatCurrency(ytdTotals.expectedRentIncome)}
+                  </Typography>
+                  <Typography variant="caption" color="textSecondary">
+                    ${1685}/month × {Math.floor(ytdTotals.expectedRentIncome / 1685)} months
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <Box>
+                  <Typography color="textSecondary" variant="body2">
+                    Total Expenses
+                  </Typography>
+                  <Typography variant="h6" color="error">
+                    {formatCurrency(ytdTotals.totalExpenses)}
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <Box>
+                  <Typography color="textSecondary" variant="body2">
+                    Utility Reimbursements
+                  </Typography>
+                  <Typography variant="h6" color="success">
+                    {formatCurrency(ytdTotals.utilityReimbursements)}
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <Box>
+                  <Typography color="textSecondary" variant="body2">
+                    Net Income YTD
+                  </Typography>
+                  <Typography 
+                    variant="h6" 
+                    color={ytdTotals.netIncome >= 0 ? 'success' : 'error'}
+                    fontWeight="bold"
+                  >
+                    {formatCurrency(ytdTotals.netIncome)}
+                  </Typography>
+                </Box>
+              </Grid>
+            </Grid>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Charts and Recent Activity */}
       <Grid container spacing={3}>

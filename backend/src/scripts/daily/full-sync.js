@@ -6,6 +6,7 @@ const simplefinService = require('../../services/simplefinService');
 const discordService = require('../../services/discordService');
 const venmoLinkService = require('../../services/venmoLinkService');
 const syncTracker = require('../../services/syncTracker');
+const { generateTrackingId } = require('../../utils/trackingId');
 
 async function fullSync(syncType = 'daily', lookbackDays = 7) {
   const startTime = new Date();
@@ -74,7 +75,7 @@ async function fullSync(syncType = 'daily', lookbackDays = 7) {
     // 3. Check for new utility bills and create payment requests
     console.log('\n3️⃣  Checking for new utility bills...');
     
-    // Find electricity and water transactions that don't have payment requests
+    // Find electricity and water transactions that need payment requests (these are split with roommates)
     const newBills = await db.query(
       `SELECT t.* FROM transactions t
        WHERE t.expense_type IN ('electricity', 'water')
@@ -98,23 +99,36 @@ async function fullSync(syncType = 'daily', lookbackDays = 7) {
       const splitAmount = (totalAmount / 3).toFixed(2);
       
       // Create payment request
+      const billMonth = new Date(bill.date).getMonth() + 1;
+      const billYear = new Date(bill.date).getFullYear();
+      const trackingId = generateTrackingId(billMonth, billYear, bill.expense_type);
+      
       const paymentRequest = await db.insert('payment_requests', {
         bill_type: bill.expense_type,
         merchant_name: bill.merchant_name || bill.name,
         amount: splitAmount,
+        total_amount: totalAmount.toFixed(2),
         venmo_username: '@UshiLo',
         roommate_name: 'UshiLo',
         status: 'pending',
         request_date: new Date(),
-        month: new Date(bill.date).getMonth() + 1,
-        year: new Date(bill.date).getFullYear(),
+        month: billMonth,
+        year: billYear,
         charge_date: bill.date,
-        created_at: new Date()
+        created_at: new Date(),
+        tracking_id: trackingId
       });
       
       // Generate Venmo link
       const monthName = new Date(bill.date).toLocaleString('default', { month: 'short' });
-      const note = `${bill.expense_type === 'electricity' ? 'PG&E' : 'Water'} bill for ${monthName} ${new Date(bill.date).getFullYear()}: Total $${totalAmount}, your share is $${splitAmount} (1/3). I've already paid the full amount.`;
+      const utilityName = {
+        'electricity': 'PG&E',
+        'water': 'Water',
+        'internet': 'Internet',
+        'landscape': 'Landscaping'
+      }[bill.expense_type] || bill.expense_type;
+      
+      const note = `[${trackingId}] ${utilityName} bill for ${monthName} ${billYear}: Total $${totalAmount}, your share is $${splitAmount} (1/3). I've already paid the full amount.`;
       
       const venmoLink = venmoLinkService.generateVenmoLink('@UshiLo', parseFloat(splitAmount), note);
       
@@ -147,7 +161,48 @@ async function fullSync(syncType = 'daily', lookbackDays = 7) {
       }
     }
     
-    // 4. Summary
+    // 4. Check and add rent income for 2025
+    console.log('\n4️⃣  Checking rent income...');
+    try {
+      const { addRentForMonth } = require('../add-rent-income-2025');
+      const currentDate = new Date();
+      const currentYear = currentDate.getFullYear();
+      const currentMonth = currentDate.getMonth() + 1;
+      let rentAdded = 0;
+      
+      // Only process rent for 2025
+      if (currentYear === 2025) {
+        // Add rent for current month if we're on or after the 1st
+        if (currentDate.getDate() >= 1) {
+          const rentResult = await addRentForMonth(2025, currentMonth);
+          if (rentResult.success) {
+            console.log(`   ✅ ${rentResult.message}`);
+            rentAdded++;
+          }
+        }
+        
+        // Also check previous months in case any were missed
+        for (let month = 1; month < currentMonth; month++) {
+          const rentResult = await addRentForMonth(2025, month);
+          if (rentResult.success) {
+            console.log(`   ✅ ${rentResult.message} (catch-up)`);
+            rentAdded++;
+          }
+        }
+      }
+      
+      if (rentAdded === 0) {
+        console.log('   ℹ️  No new rent income to add');
+      } else {
+        console.log(`   💰 Added ${rentAdded} rent payment(s)`);
+      }
+    } catch (rentError) {
+      console.error('   ❌ Error checking rent income:', rentError.message);
+      // Don't fail the sync for rent errors
+      results.errors.push(`Rent income check: ${rentError.message}`);
+    }
+    
+    // 5. Summary
     const endTime = new Date();
     const duration = Math.round((endTime - startTime) / 1000);
     

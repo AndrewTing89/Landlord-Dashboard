@@ -118,10 +118,15 @@ app.post('/api/lambda/generate-report', async (req, res) => {
 // Dashboard endpoints
 app.get('/api/transactions', async (req, res) => {
   try {
-    const { start_date, end_date, expense_type } = req.query;
+    const { start_date, end_date, expense_type, expense_types, exclude_types, search, include_other } = req.query;
     
     let query = 'SELECT * FROM transactions WHERE 1=1';
     const params = [];
+    
+    // By default, exclude 'other' transactions unless explicitly requested
+    if (!include_other || include_other !== 'true') {
+      query += " AND expense_type != 'other'";
+    }
     
     if (start_date) {
       params.push(start_date);
@@ -133,9 +138,29 @@ app.get('/api/transactions', async (req, res) => {
       query += ` AND date <= $${params.length}`;
     }
     
-    if (expense_type) {
+    // Handle both single expense_type and multiple expense_types
+    if (expense_types) {
+      const typesArray = expense_types.split(',');
+      const placeholders = typesArray.map((_, index) => `$${params.length + index + 1}`).join(', ');
+      params.push(...typesArray);
+      query += ` AND expense_type IN (${placeholders})`;
+    } else if (expense_type) {
       params.push(expense_type);
       query += ` AND expense_type = $${params.length}`;
+    }
+    
+    // Handle excluded expense types
+    if (exclude_types) {
+      const excludeArray = exclude_types.split(',');
+      const excludePlaceholders = excludeArray.map((_, index) => `$${params.length + index + 1}`).join(', ');
+      params.push(...excludeArray);
+      query += ` AND expense_type NOT IN (${excludePlaceholders})`;
+    }
+    
+    // Handle search query
+    if (search) {
+      params.push(`%${search}%`);
+      query += ` AND (LOWER(name) LIKE LOWER($${params.length}) OR LOWER(merchant_name) LIKE LOWER($${params.length}) OR LOWER(category) LIKE LOWER($${params.length}))`;
     }
     
     query += ' ORDER BY date DESC LIMIT 500';
@@ -243,7 +268,65 @@ app.get('/api/summary', async (req, res) => {
       params
     );
     
-    res.json(summary);
+    // Calculate YTD totals if viewing 2025 data
+    let ytdTotals = null;
+    if (year && parseInt(year) === 2025) {
+      // Get total expenses for 2025
+      const expensesResult = await db.getOne(
+        `SELECT 
+          SUM(t.amount) - COALESCE(SUM(adj.adjustment_amount), 0) as total_expenses
+         FROM transactions t
+         LEFT JOIN utility_adjustments adj ON adj.transaction_id = t.id
+         WHERE EXTRACT(YEAR FROM t.date) = 2025
+           AND t.expense_type NOT IN ('rent', 'other', 'utility_reimbursement')`
+      );
+      
+      // Get actual rent income from transactions
+      const rentIncomeResult = await db.getOne(
+        `SELECT SUM(amount) as rent_income
+         FROM transactions
+         WHERE EXTRACT(YEAR FROM date) = 2025
+           AND expense_type = 'rent'`
+      );
+      
+      // Calculate expected rent income for 2025
+      // $1685 per month, but only count months that have passed
+      const currentDate = new Date();
+      const currentYear = currentDate.getFullYear();
+      const currentMonth = currentDate.getMonth() + 1; // JavaScript months are 0-indexed
+      let monthsWithRent = 0;
+      
+      if (currentYear === 2025) {
+        // If we're in 2025, count months up to current month if date has passed
+        monthsWithRent = currentDate.getDate() >= 1 ? currentMonth : currentMonth - 1;
+      } else if (currentYear > 2025) {
+        // If we're past 2025, count all 12 months
+        monthsWithRent = 12;
+      }
+      
+      const expectedRentIncome = monthsWithRent * 1685;
+      
+      // Get utility reimbursements
+      const reimbursementsResult = await db.getOne(
+        `SELECT SUM(amount) as reimbursements
+         FROM transactions
+         WHERE EXTRACT(YEAR FROM date) = 2025
+           AND expense_type = 'utility_reimbursement'`
+      );
+      
+      ytdTotals = {
+        totalExpenses: parseFloat(expensesResult.total_expenses || 0),
+        actualRentIncome: parseFloat(rentIncomeResult.rent_income || 0),
+        expectedRentIncome: expectedRentIncome,
+        utilityReimbursements: parseFloat(reimbursementsResult.reimbursements || 0),
+        netIncome: expectedRentIncome + parseFloat(reimbursementsResult.reimbursements || 0) - parseFloat(expensesResult.total_expenses || 0)
+      };
+    }
+    
+    res.json({ 
+      summary,
+      ytdTotals: ytdTotals
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -374,6 +457,35 @@ app.post('/api/payment-requests/:id/mark-paid', async (req, res) => {
       await db.query('ROLLBACK');
       throw error;
     }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Forego payment - mark as waived without reducing expenses
+app.post('/api/payment-requests/:id/forego', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Get the payment request to verify it exists
+    const paymentRequest = await db.getOne(
+      'SELECT * FROM payment_requests WHERE id = $1',
+      [id]
+    );
+    
+    if (!paymentRequest) {
+      return res.status(404).json({ error: 'Payment request not found' });
+    }
+    
+    // Update payment request status to 'foregone'
+    await db.query(
+      'UPDATE payment_requests SET status = $1, updated_at = NOW() WHERE id = $2',
+      ['foregone', id]
+    );
+    
+    // No expense adjustment is made - the expense remains as-is
+    
+    res.json({ success: true, message: 'Payment has been foregone' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -660,6 +772,42 @@ app.post('/api/simplefin/sync', async (req, res) => {
   try {
     console.log('Syncing with SimpleFIN...');
     const result = await simplefinService.syncTransactions();
+    
+    // After syncing transactions, check and add rent income for 2025
+    if (result.success) {
+      try {
+        const { addRentForMonth } = require('./scripts/add-rent-income-2025');
+        const currentDate = new Date();
+        const currentYear = currentDate.getFullYear();
+        const currentMonth = currentDate.getMonth() + 1;
+        
+        // Only process rent for 2025
+        if (currentYear === 2025) {
+          // Add rent for current month if we're on or after the 1st
+          if (currentDate.getDate() >= 1) {
+            const rentResult = await addRentForMonth(2025, currentMonth);
+            if (rentResult.success) {
+              console.log(`[Sync] ${rentResult.message}`);
+              result.rentAdded = true;
+              result.rentMessage = rentResult.message;
+            }
+          }
+          
+          // Also check previous months in case any were missed
+          for (let month = 1; month < currentMonth; month++) {
+            const rentResult = await addRentForMonth(2025, month);
+            if (rentResult.success) {
+              console.log(`[Sync] ${rentResult.message} (catch-up)`);
+            }
+          }
+        }
+      } catch (rentError) {
+        console.error('Error adding rent income during sync:', rentError);
+        // Don't fail the whole sync if rent addition fails
+        result.rentError = rentError.message;
+      }
+    }
+    
     res.json(result);
   } catch (error) {
     console.error('SimpleFIN sync error:', error);
@@ -913,7 +1061,7 @@ app.get('/api/review/expense-types', async (req, res) => {
       { value: 'water', label: 'Water' },
       { value: 'internet', label: 'Internet' },
       { value: 'maintenance', label: 'Maintenance' },
-      { value: 'yard_maintenance', label: 'Yard Maintenance' },
+      { value: 'landscape', label: 'Landscape' },
       { value: 'property_tax', label: 'Property Tax' },
       { value: 'insurance', label: 'Insurance' },
       { value: 'other', label: 'Other' }

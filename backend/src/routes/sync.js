@@ -51,7 +51,7 @@ router.post('/daily', async (req, res) => {
 // Catch-up sync
 router.post('/catch-up', async (req, res) => {
   try {
-    const { days = 90 } = req.body;
+    const { days = 365 } = req.body;
     const syncProcess = spawn('node', ['src/scripts/daily/full-sync.js', 'catch_up', days.toString()], {
       cwd: process.cwd(),
       env: { ...process.env },

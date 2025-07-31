@@ -29,7 +29,7 @@ async function processPendingTransactions() {
     
     console.log(`✅ Processed ${rentResult.rowCount} rent payments`);
     
-    // Process yard maintenance (Carlos)
+    // Process landscape maintenance (Carlos)
     const maintenanceResult = await db.query(
       `INSERT INTO transactions (plaid_transaction_id, plaid_account_id, amount, date, name, merchant_name, expense_type, category, subcategory)
        SELECT 
@@ -39,11 +39,11 @@ async function processPendingTransactions() {
          posted_date,
          description,
          'Carlos Gardener',
-         'yard_maintenance',
+         'landscape',
          'Maintenance',
          null
        FROM raw_transactions
-       WHERE suggested_expense_type = 'yard_maintenance'
+       WHERE suggested_expense_type = 'landscape'
          AND confidence_score >= 0.9
          AND processed = false
          AND NOT EXISTS (
@@ -52,13 +52,13 @@ async function processPendingTransactions() {
          )`
     );
     
-    console.log(`✅ Processed ${maintenanceResult.rowCount} yard maintenance payments`);
+    console.log(`✅ Processed ${maintenanceResult.rowCount} landscape maintenance payments`);
     
     // Mark them as processed
     await db.query(
       `UPDATE raw_transactions 
        SET processed = true, processed_at = NOW()
-       WHERE (suggested_expense_type IN ('rent', 'yard_maintenance'))
+       WHERE (suggested_expense_type IN ('rent', 'landscape'))
          AND confidence_score >= 0.9
          AND processed = false`
     );

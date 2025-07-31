@@ -22,7 +22,7 @@ export type ExpenseType =
   | 'electricity' 
   | 'water' 
   | 'maintenance' 
-  | 'yard_maintenance'
+  | 'landscape'
   | 'property_tax'
   | 'insurance'
   | 'internet'
@@ -45,7 +45,7 @@ export interface PaymentRequest {
   venmo_username: string;
   amount: string | number; // Backend returns string
   request_date: string;
-  status: 'pending' | 'sent' | 'paid';
+  status: 'pending' | 'sent' | 'paid' | 'foregone';
   venmo_link: string;
   bill_type: 'electricity' | 'water' | null;
   month: number | null;

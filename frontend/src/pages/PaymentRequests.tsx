@@ -30,6 +30,18 @@ import {
   StepIconProps,
   styled,
   stepConnectorClasses,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TablePagination,
+  Paper,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
 } from '@mui/material';
 import {
   ContentCopy as CopyIcon,
@@ -46,6 +58,7 @@ import {
   LinkOff as LinkOffIcon,
   Timeline as TimelineIcon,
   Close as CloseIcon,
+  List as ListIcon,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { apiService } from '../services/api';
@@ -105,6 +118,14 @@ export default function PaymentRequests() {
   const [sendingSmsId, setSendingSmsId] = useState<number | null>(null);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [requestToMarkPaid, setRequestToMarkPaid] = useState<PaymentRequest | null>(null);
+  const [foregoneDialogOpen, setForegoneDialogOpen] = useState(false);
+  const [requestToForego, setRequestToForego] = useState<PaymentRequest | null>(null);
+  
+  // Database view state
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [typeFilter, setTypeFilter] = useState<string>('all');
   const [timelineDrawerOpen, setTimelineDrawerOpen] = useState(false);
   const [selectedTimelineRequest, setSelectedTimelineRequest] = useState<PaymentRequest | null>(null);
   
@@ -196,6 +217,11 @@ export default function PaymentRequests() {
     setConfirmDialogOpen(true);
   };
 
+  const handleForegoClick = (request: PaymentRequest) => {
+    setRequestToForego(request);
+    setForegoneDialogOpen(true);
+  };
+
   const handleConfirmMarkPaid = async () => {
     if (!requestToMarkPaid) return;
     
@@ -204,7 +230,7 @@ export default function PaymentRequests() {
     
     try {
       await apiService.markPaymentPaid(requestToMarkPaid.id);
-      await fetchPaymentRequests();
+      await fetchAllData();
       setConfirmDialogOpen(false);
       setRequestToMarkPaid(null);
       
@@ -224,6 +250,32 @@ export default function PaymentRequests() {
   const handleCancelMarkPaid = () => {
     setConfirmDialogOpen(false);
     setRequestToMarkPaid(null);
+  };
+
+  const handleConfirmForego = async () => {
+    if (!requestToForego) return;
+    
+    const scrollPosition = window.pageYOffset;
+    
+    try {
+      await apiService.foregoPayment(requestToForego.id);
+      await fetchAllData();
+      setForegoneDialogOpen(false);
+      setRequestToForego(null);
+      
+      // Restore scroll position
+      setTimeout(() => {
+        window.scrollTo(0, scrollPosition);
+      }, 100);
+    } catch (error: any) {
+      console.error('Error foregoing payment:', error);
+      alert(`Error foregoing payment: ${error.response?.data?.error || error.message}`);
+    }
+  };
+
+  const handleCancelForego = () => {
+    setForegoneDialogOpen(false);
+    setRequestToForego(null);
   };
   
   const handleSendSMS = async (request: PaymentRequest) => {
@@ -252,12 +304,14 @@ export default function PaymentRequests() {
     }).format(amount);
   };
 
-  const getStatusColor = (status: string): 'success' | 'warning' | 'default' => {
+  const getStatusColor = (status: string): 'success' | 'warning' | 'default' | 'error' => {
     switch (status) {
       case 'paid':
         return 'success';
       case 'sent':
         return 'warning';
+      case 'foregone':
+        return 'error';
       default:
         return 'default';
     }
@@ -327,8 +381,9 @@ export default function PaymentRequests() {
     setTimelineDrawerOpen(true);
   };
 
-  // Group requests by month
-  const groupedRequests = paymentRequests.reduce((acc, request) => {
+  // Group requests by month - only show pending requests in active tab
+  const activeRequests = paymentRequests.filter(r => r.status === 'pending' || r.status === 'sent');
+  const groupedRequests = activeRequests.reduce((acc, request) => {
     // Use the bill's month/year for grouping
     const year = request.year;
     const month = request.month;
@@ -382,7 +437,7 @@ export default function PaymentRequests() {
         <Tabs value={tabValue} onChange={(_, newValue) => setTabValue(newValue)}>
           <Tab 
             label={
-              <Badge badgeContent={paymentRequests.filter(r => r.status !== 'paid').length} color="primary">
+              <Badge badgeContent={activeRequests.length} color="primary">
                 Active Requests
               </Badge>
             } 
@@ -410,6 +465,15 @@ export default function PaymentRequests() {
           <Tab 
             label="History" 
             icon={<HistoryIcon />} 
+            iconPosition="start" 
+          />
+          <Tab 
+            label={
+              <Badge badgeContent={paymentRequests.length} color="default">
+                All Requests
+              </Badge>
+            } 
+            icon={<ListIcon />} 
             iconPosition="start" 
           />
         </Tabs>
@@ -485,7 +549,11 @@ export default function PaymentRequests() {
                                 label={request.status}
                                 color={getStatusColor(request.status)}
                                 size="small"
-                                icon={request.status === 'paid' ? <CheckCircleIcon /> : <ScheduleIcon />}
+                                icon={
+                                  request.status === 'paid' ? <CheckCircleIcon /> : 
+                                  request.status === 'foregone' ? <LinkOffIcon /> : 
+                                  <ScheduleIcon />
+                                }
                               />
                             </Box>
                             
@@ -570,16 +638,28 @@ export default function PaymentRequests() {
                               >
                                 <TimelineIcon />
                               </IconButton>
-                              {request.status !== 'paid' && (
-                                <Button
-                                  variant="outlined"
-                                  size="small"
-                                  onClick={() => handleMarkPaidClick(request)}
-                                  title="Mark as paid manually"
-                                  sx={{ minWidth: 'auto', px: 1 }}
-                                >
-                                  Paid
-                                </Button>
+                              {request.status !== 'paid' && request.status !== 'foregone' && (
+                                <>
+                                  <Button
+                                    variant="outlined"
+                                    size="small"
+                                    onClick={() => handleMarkPaidClick(request)}
+                                    title="Mark as paid manually"
+                                    sx={{ minWidth: 'auto', px: 1 }}
+                                  >
+                                    Paid
+                                  </Button>
+                                  <Button
+                                    variant="outlined"
+                                    size="small"
+                                    color="warning"
+                                    onClick={() => handleForegoClick(request)}
+                                    title="Forego this payment"
+                                    sx={{ minWidth: 'auto', px: 1 }}
+                                  >
+                                    Forego
+                                  </Button>
+                                </>
                               )}
                               <IconButton
                                 size="small"
@@ -701,6 +781,49 @@ export default function PaymentRequests() {
             color="primary"
           >
             Confirm Paid
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Confirmation dialog for foregoing payment */}
+      <Dialog 
+        open={foregoneDialogOpen} 
+        onClose={handleCancelForego} 
+        maxWidth="xs" 
+        fullWidth
+      >
+        <DialogTitle>Forego Payment</DialogTitle>
+        <DialogContent>
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            This will mark the payment as waived without reducing your expenses.
+          </Alert>
+          <Typography variant="body1">
+            Are you sure you want to forego this payment?
+          </Typography>
+          {requestToForego && (
+            <Box mt={2}>
+              <Typography variant="body2" color="textSecondary">
+                {requestToForego.company_name || requestToForego.bill_type}
+              </Typography>
+              <Typography variant="h6">
+                {formatCurrency(requestToForego.amount)}
+              </Typography>
+              <Typography variant="body2" color="textSecondary">
+                From: {requestToForego.roommate_name}
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCancelForego} color="inherit">
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleConfirmForego} 
+            variant="contained" 
+            color="warning"
+          >
+            Forego Payment
           </Button>
         </DialogActions>
       </Dialog>
@@ -852,6 +975,157 @@ export default function PaymentRequests() {
               </CardContent>
             </Card>
           )}
+        </Box>
+      )}
+
+      {/* Tab 4: All Payment Requests Database View */}
+      {tabValue === 4 && (
+        <Box>
+          {/* Filters */}
+          <Box sx={{ mb: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+            <FormControl size="small" sx={{ minWidth: 120 }}>
+              <InputLabel>Status</InputLabel>
+              <Select
+                value={statusFilter}
+                label="Status"
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setPage(0);
+                }}
+              >
+                <MenuItem value="all">All</MenuItem>
+                <MenuItem value="pending">Pending</MenuItem>
+                <MenuItem value="sent">Sent</MenuItem>
+                <MenuItem value="paid">Paid</MenuItem>
+                <MenuItem value="foregone">Foregone</MenuItem>
+              </Select>
+            </FormControl>
+            
+            <FormControl size="small" sx={{ minWidth: 120 }}>
+              <InputLabel>Type</InputLabel>
+              <Select
+                value={typeFilter}
+                label="Type"
+                onChange={(e) => {
+                  setTypeFilter(e.target.value);
+                  setPage(0);
+                }}
+              >
+                <MenuItem value="all">All</MenuItem>
+                <MenuItem value="electricity">Electricity</MenuItem>
+                <MenuItem value="water">Water</MenuItem>
+              </Select>
+            </FormControl>
+          </Box>
+          
+          <TableContainer component={Paper}>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Date</TableCell>
+                  <TableCell>Roommate</TableCell>
+                  <TableCell>Type</TableCell>
+                  <TableCell>Merchant</TableCell>
+                  <TableCell align="right">Amount</TableCell>
+                  <TableCell align="right">Total</TableCell>
+                  <TableCell>Status</TableCell>
+                  <TableCell>Month/Year</TableCell>
+                  <TableCell>Tracking ID</TableCell>
+                  <TableCell>Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {paymentRequests
+                  .filter(request => {
+                    if (statusFilter !== 'all' && request.status !== statusFilter) return false;
+                    if (typeFilter !== 'all' && request.bill_type !== typeFilter) return false;
+                    return true;
+                  })
+                  .sort((a, b) => {
+                    // Sort by year, month, then date
+                    if (b.year !== a.year) return (b.year || 0) - (a.year || 0);
+                    if (b.month !== a.month) return (b.month || 0) - (a.month || 0);
+                    return new Date(b.request_date).getTime() - new Date(a.request_date).getTime();
+                  })
+                  .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+                  .map((request) => (
+                    <TableRow key={request.id}>
+                      <TableCell>
+                        {format(new Date(request.request_date), 'MMM dd, yyyy')}
+                      </TableCell>
+                      <TableCell>{request.roommate_name}</TableCell>
+                      <TableCell>
+                        <Chip 
+                          label={request.bill_type || 'N/A'} 
+                          size="small"
+                          color={request.bill_type === 'electricity' ? 'primary' : 'secondary'}
+                        />
+                      </TableCell>
+                      <TableCell>{request.merchant_name || request.company_name || '-'}</TableCell>
+                      <TableCell align="right">{formatCurrency(request.amount)}</TableCell>
+                      <TableCell align="right">{formatCurrency(request.total_amount || 0)}</TableCell>
+                      <TableCell>
+                        <Chip
+                          label={request.status}
+                          size="small"
+                          color={
+                            request.status === 'paid' ? 'success' :
+                            request.status === 'sent' ? 'info' :
+                            request.status === 'foregone' ? 'warning' :
+                            'default'
+                          }
+                        />
+                      </TableCell>
+                      <TableCell>
+                        {request.month && request.year ? `${request.month}/${request.year}` : '-'}
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                          {request.tracking_id || '-'}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <IconButton
+                          size="small"
+                          onClick={() => openTimelineDrawer(request)}
+                          title="View timeline"
+                        >
+                          <TimelineIcon />
+                        </IconButton>
+                        {request.venmo_link && (
+                          <IconButton
+                            size="small"
+                            onClick={() => handleOpenVenmo(request)}
+                            title="Open in Venmo"
+                          >
+                            <LaunchIcon />
+                          </IconButton>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+          
+          <TablePagination
+            rowsPerPageOptions={[10, 25, 50, 100]}
+            component="div"
+            count={
+              paymentRequests.filter(request => {
+                if (statusFilter !== 'all' && request.status !== statusFilter) return false;
+                if (typeFilter !== 'all' && request.bill_type !== typeFilter) return false;
+                return true;
+              }).length
+            }
+            rowsPerPage={rowsPerPage}
+            page={page}
+            onPageChange={(event, newPage) => setPage(newPage)}
+            onRowsPerPageChange={(event) => {
+              setRowsPerPage(parseInt(event.target.value, 10));
+              setPage(0);
+            }}
+          />
         </Box>
       )}
       

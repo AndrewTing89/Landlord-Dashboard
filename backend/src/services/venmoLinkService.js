@@ -78,6 +78,7 @@ class VenmoLinkService {
         roommate_name: roommateConfig.roommate.name,
         venmo_username: roommateConfig.roommate.venmoUsername,
         amount: roommateShare.toFixed(2),
+        total_amount: totalAmount.toFixed(2),
         bill_type: bill.bill_type,
         status: 'pending',
         request_date: new Date(),

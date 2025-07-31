@@ -89,6 +89,7 @@ async function dailySync(syncType = 'daily') {
         bill_type: bill.expense_type,
         merchant_name: bill.merchant_name || bill.name,
         amount: splitAmount,
+        total_amount: totalAmount.toFixed(2),
         venmo_username: '@UshiLo',
         roommate_name: 'UshiLo',
         status: 'pending',

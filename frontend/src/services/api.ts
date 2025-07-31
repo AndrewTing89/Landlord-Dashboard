@@ -61,6 +61,7 @@ export const apiService = {
     start_date?: string;
     end_date?: string;
     expense_type?: string;
+    expense_types?: string;
   }) => api.get(config.api.endpoints.transactions, { params }),
   
   getSummary: (year?: number, month?: number) =>
@@ -73,14 +74,17 @@ export const apiService = {
     month?: number;
     year?: number;
     status?: string;
-  }) => api.get('/api/payment/requests', { params }),
+  }) => api.get('/api/payment-requests', { params }),
   
   // Payment status
   markPaymentPaid: (id: number) =>
-    api.post(`/api/payment/requests/${id}/mark-paid`),
+    api.post(`/api/payment-requests/${id}/mark-paid`),
+  
+  foregoPayment: (id: number) =>
+    api.post(`/api/payment-requests/${id}/forego`),
   
   sendPaymentSMS: (id: number) =>
-    api.post(`/api/payment/requests/${id}/send-notification`),
+    api.post(`/api/payment-requests/${id}/send-sms`),
   
   checkPaymentEmails: () =>
     api.post('/api/check-payment-emails'),

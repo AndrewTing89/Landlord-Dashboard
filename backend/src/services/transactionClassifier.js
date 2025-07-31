@@ -35,13 +35,9 @@ class TransactionClassifier {
       const lowerName = transactionName.toLowerCase();
       const lowerMerchant = merchantName.toLowerCase();
       
-      // Check for common rent payment patterns
+      // Check for common rent payment patterns (but not Venmo anymore)
       if (lowerName.includes('rent') || 
-          lowerName.includes('tenant') ||
-          lowerName.includes('zelle') ||
-          lowerName.includes('venmo') ||
-          lowerMerchant.includes('zelle') ||
-          lowerMerchant.includes('venmo')) {
+          lowerName.includes('tenant')) {
         return 'rent';
       }
     }

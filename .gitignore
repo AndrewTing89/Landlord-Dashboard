@@ -57,3 +57,31 @@ ENV/
 # Lock files (keep package-lock.json)
 yarn.lock
 pnpm-lock.yaml
+
+# Financial data and exports
+bofa*.csv
+*bofa*.csv
+exports/
+*.xlsx
+*.xls
+
+# Personal/Sensitive data
+old bofa/
+*bank*.csv
+*transaction*.csv
+*payment*.csv
+financial_data/
+
+# Logs
+logs/
+*.log
+
+# AWS MCP (if not needed)
+aws-mcp/
+
+# Gmail tokens
+backend/gmail-token.json
+backend/gmail-credentials.json
+
+# Temporary scripts
+backend/scripts/populate-payment-request-totals.js

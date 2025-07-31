@@ -47,7 +47,7 @@ interface MonthlyData {
   electricity: number;
   water: number;
   maintenance: number;
-  yard_maintenance: number;
+  landscape: number;
   internet: number;
   property_tax: number;
   insurance: number;
@@ -67,7 +67,7 @@ const COLORS = {
   electricity: '#2196f3',
   water: '#00bcd4',
   maintenance: '#ff9800',
-  yard_maintenance: '#82ca9d',
+  landscape: '#82ca9d',
   internet: '#8dd1e1',
   property_tax: '#d084d0',
   insurance: '#ffa500',
@@ -88,7 +88,7 @@ export default function Trends() {
   const [timeRange, setTimeRange] = useState<'6m' | '1y' | '2y' | 'all'>('1y');
   const [chartType, setChartType] = useState<'line' | 'area' | 'bar'>('line');
   const [selectedCategories, setSelectedCategories] = useState<string[]>([
-    'electricity', 'water', 'maintenance', 'yard_maintenance', 'internet', 'property_tax'
+    'electricity', 'water', 'maintenance', 'landscape', 'internet', 'property_tax'
   ]);
   
   const theme = useTheme();
@@ -164,7 +164,7 @@ export default function Trends() {
           electricity: 0,
           water: 0,
           maintenance: 0,
-          yard_maintenance: 0,
+          landscape: 0,
           internet: 0,
           property_tax: 0,
           insurance: 0,
@@ -192,8 +192,8 @@ export default function Trends() {
           monthData.maintenance += amount;
           monthData.total += amount;
           break;
-        case 'yard_maintenance':
-          monthData.yard_maintenance += amount;
+        case 'landscape':
+          monthData.landscape += amount;
           monthData.total += amount;
           break;
         case 'internet':
@@ -270,7 +270,7 @@ export default function Trends() {
       totals.electricity += data.electricity || 0;
       totals.water += data.water || 0;
       totals.maintenance += data.maintenance || 0;
-      totals.yard_maintenance += data.yard_maintenance || 0;
+      totals.landscape += data.landscape || 0;
       totals.internet += data.internet || 0;
       totals.property_tax += data.property_tax || 0;
       totals.insurance += data.insurance || 0;
@@ -316,7 +316,7 @@ export default function Trends() {
             {selectedCategories.includes('electricity') && <Area type="monotone" dataKey="electricity" stackId="1" stroke={COLORS.electricity} fill={COLORS.electricity} name="Electricity" />}
             {selectedCategories.includes('water') && <Area type="monotone" dataKey="water" stackId="1" stroke={COLORS.water} fill={COLORS.water} name="Water" />}
             {selectedCategories.includes('maintenance') && <Area type="monotone" dataKey="maintenance" stackId="1" stroke={COLORS.maintenance} fill={COLORS.maintenance} name="Maintenance" />}
-            {selectedCategories.includes('yard_maintenance') && <Area type="monotone" dataKey="yard_maintenance" stackId="1" stroke={COLORS.yard_maintenance} fill={COLORS.yard_maintenance} name="Yard Maintenance" />}
+            {selectedCategories.includes('landscape') && <Area type="monotone" dataKey="landscape" stackId="1" stroke={COLORS.landscape} fill={COLORS.landscape} name="Landscape" />}
             {selectedCategories.includes('internet') && <Area type="monotone" dataKey="internet" stackId="1" stroke={COLORS.internet} fill={COLORS.internet} name="Internet" />}
             {selectedCategories.includes('property_tax') && <Area type="monotone" dataKey="property_tax" stackId="1" stroke={COLORS.property_tax} fill={COLORS.property_tax} name="Property Tax" />}
             {selectedCategories.includes('insurance') && <Area type="monotone" dataKey="insurance" stackId="1" stroke={COLORS.insurance} fill={COLORS.insurance} name="Insurance" />}
@@ -337,7 +337,7 @@ export default function Trends() {
             {selectedCategories.includes('electricity') && <Bar dataKey="electricity" fill={COLORS.electricity} name="Electricity" />}
             {selectedCategories.includes('water') && <Bar dataKey="water" fill={COLORS.water} name="Water" />}
             {selectedCategories.includes('maintenance') && <Bar dataKey="maintenance" fill={COLORS.maintenance} name="Maintenance" />}
-            {selectedCategories.includes('yard_maintenance') && <Bar dataKey="yard_maintenance" fill={COLORS.yard_maintenance} name="Yard Maintenance" />}
+            {selectedCategories.includes('landscape') && <Bar dataKey="landscape" fill={COLORS.landscape} name="Landscape" />}
             {selectedCategories.includes('internet') && <Bar dataKey="internet" fill={COLORS.internet} name="Internet" />}
             {selectedCategories.includes('property_tax') && <Bar dataKey="property_tax" fill={COLORS.property_tax} name="Property Tax" />}
             {selectedCategories.includes('insurance') && <Bar dataKey="insurance" fill={COLORS.insurance} name="Insurance" />}
@@ -358,7 +358,7 @@ export default function Trends() {
           {selectedCategories.includes('electricity') && <Line type="monotone" dataKey="electricity" stroke={COLORS.electricity} strokeWidth={2} name="Electricity" dot={false} />}
           {selectedCategories.includes('water') && <Line type="monotone" dataKey="water" stroke={COLORS.water} strokeWidth={2} name="Water" dot={false} />}
           {selectedCategories.includes('maintenance') && <Line type="monotone" dataKey="maintenance" stroke={COLORS.maintenance} strokeWidth={2} name="Maintenance" dot={false} />}
-          {selectedCategories.includes('yard_maintenance') && <Line type="monotone" dataKey="yard_maintenance" stroke={COLORS.yard_maintenance} strokeWidth={2} name="Yard Maintenance" dot={false} />}
+          {selectedCategories.includes('landscape') && <Line type="monotone" dataKey="landscape" stroke={COLORS.landscape} strokeWidth={2} name="Landscape" dot={false} />}
           {selectedCategories.includes('internet') && <Line type="monotone" dataKey="internet" stroke={COLORS.internet} strokeWidth={2} name="Internet" dot={false} />}
           {selectedCategories.includes('property_tax') && <Line type="monotone" dataKey="property_tax" stroke={COLORS.property_tax} strokeWidth={2} name="Property Tax" dot={false} />}
           {selectedCategories.includes('insurance') && <Line type="monotone" dataKey="insurance" stroke={COLORS.insurance} strokeWidth={2} name="Insurance" dot={false} />}
@@ -410,7 +410,7 @@ export default function Trends() {
               <MenuItem value="electricity">Electricity</MenuItem>
               <MenuItem value="water">Water</MenuItem>
               <MenuItem value="maintenance">Maintenance</MenuItem>
-              <MenuItem value="yard_maintenance">Yard Maintenance</MenuItem>
+              <MenuItem value="landscape">Landscape</MenuItem>
               <MenuItem value="internet">Internet</MenuItem>
               <MenuItem value="property_tax">Property Tax</MenuItem>
               <MenuItem value="insurance">Insurance</MenuItem>
