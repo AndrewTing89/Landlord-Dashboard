@@ -1,0 +1,348 @@
+const db = require('../db/connection');
+const gmailConfig = require('../../config/gmail.config');
+
+class VenmoMatchingService {
+  /**
+   * Calculate similarity between two strings (Levenshtein distance)
+   */
+  calculateStringSimilarity(str1, str2) {
+    if (!str1 || !str2) return 0;
+    
+    str1 = str1.toLowerCase().trim();
+    str2 = str2.toLowerCase().trim();
+    
+    if (str1 === str2) return 1;
+    
+    const longer = str1.length > str2.length ? str1 : str2;
+    const shorter = str1.length > str2.length ? str2 : str1;
+    
+    if (longer.length === 0) return 1.0;
+    
+    const editDistance = this.levenshteinDistance(longer, shorter);
+    return (longer.length - editDistance) / longer.length;
+  }
+
+  /**
+   * Calculate Levenshtein distance between two strings
+   */
+  levenshteinDistance(str1, str2) {
+    const track = Array(str2.length + 1).fill(null).map(() =>
+      Array(str1.length + 1).fill(null));
+    
+    for (let i = 0; i <= str1.length; i += 1) {
+      track[0][i] = i;
+    }
+    
+    for (let j = 0; j <= str2.length; j += 1) {
+      track[j][0] = j;
+    }
+    
+    for (let j = 1; j <= str2.length; j += 1) {
+      for (let i = 1; i <= str1.length; i += 1) {
+        const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1;
+        track[j][i] = Math.min(
+          track[j][i - 1] + 1,
+          track[j - 1][i] + 1,
+          track[j - 1][i - 1] + indicator,
+        );
+      }
+    }
+    
+    return track[str2.length][str1.length];
+  }
+
+  /**
+   * Match a payment email to a payment request
+   */
+  async matchPaymentEmail(emailRecord) {
+    console.log(`🔍 Attempting to match payment email: $${emailRecord.venmo_amount} from ${emailRecord.venmo_actor}`);
+    
+    try {
+      // Find potential payment request matches
+      const timeWindow = new Date(emailRecord.received_date);
+      timeWindow.setHours(timeWindow.getHours() - gmailConfig.matching.timeWindowHours);
+      
+      const potentialMatches = await db.getMany(`
+        SELECT pr.*, vpr.recipient_name, ub.bill_type
+        FROM payment_requests pr
+        LEFT JOIN venmo_payment_requests vpr ON pr.utility_bill_id = vpr.utility_bill_id
+        LEFT JOIN utility_bills ub ON pr.utility_bill_id = ub.id
+        WHERE pr.status = 'pending'
+          AND pr.created_at >= $1
+          AND pr.created_at <= $2
+          AND ABS(pr.amount - $3) <= $4
+        ORDER BY ABS(pr.amount - $3) ASC, pr.created_at DESC
+      `, [
+        timeWindow,
+        emailRecord.received_date,
+        emailRecord.venmo_amount,
+        gmailConfig.matching.amountTolerance
+      ]);
+      
+      if (potentialMatches.length === 0) {
+        console.log('❌ No potential matches found based on amount and time window');
+        return { matched: false, reason: 'no_candidates' };
+      }
+      
+      console.log(`📋 Found ${potentialMatches.length} potential matches`);
+      
+      // Calculate confidence scores for each match
+      const matchScores = potentialMatches.map(request => {
+        const scores = {
+          request_id: request.id,
+          amount_match: 1 - Math.abs(parseFloat(request.amount) - emailRecord.venmo_amount) / parseFloat(request.amount),
+          name_match: this.calculateStringSimilarity(
+            emailRecord.venmo_actor,
+            request.recipient_name || request.roommate_name
+          ),
+          time_proximity: 1 - (emailRecord.received_date - request.created_at) / (gmailConfig.matching.timeWindowHours * 60 * 60 * 1000),
+          note_match: 0
+        };
+        
+        // Check if note contains bill type keywords
+        if (emailRecord.venmo_note && request.bill_type) {
+          const noteKeywords = {
+            'electricity': ['pge', 'pg&e', 'electric', 'power'],
+            'water': ['water', 'great oaks']
+          };
+          
+          const keywords = noteKeywords[request.bill_type] || [];
+          const noteMatch = keywords.some(keyword => 
+            emailRecord.venmo_note.toLowerCase().includes(keyword)
+          );
+          
+          scores.note_match = noteMatch ? 1 : 0;
+        }
+        
+        // Calculate weighted confidence score
+        scores.confidence = (
+          scores.amount_match * 0.4 +
+          scores.name_match * 0.3 +
+          scores.time_proximity * 0.2 +
+          scores.note_match * 0.1
+        );
+        
+        return {
+          ...request,
+          ...scores
+        };
+      });
+      
+      // Sort by confidence score
+      matchScores.sort((a, b) => b.confidence - a.confidence);
+      const bestMatch = matchScores[0];
+      
+      console.log(`🎯 Best match: Request #${bestMatch.id} with confidence ${(bestMatch.confidence * 100).toFixed(1)}%`);
+      
+      // Auto-match if confidence is high enough
+      if (bestMatch.confidence >= gmailConfig.matching.minConfidence) {
+        await this.applyMatch(emailRecord, bestMatch);
+        return { 
+          matched: true, 
+          payment_request_id: bestMatch.id,
+          confidence: bestMatch.confidence 
+        };
+      } else {
+        // Store for manual review
+        await db.insert('venmo_unmatched_emails', {
+          venmo_email_id: emailRecord.id,
+          potential_matches: JSON.stringify(matchScores.slice(0, 3)), // Top 3 matches
+          resolution_status: 'pending'
+        });
+        
+        console.log('⚠️  Confidence too low for auto-match, flagged for manual review');
+        
+        await db.query(
+          'UPDATE venmo_emails SET manual_review_needed = true, review_reason = $1 WHERE id = $2',
+          [`Low confidence: ${(bestMatch.confidence * 100).toFixed(1)}%`, emailRecord.id]
+        );
+        
+        return { 
+          matched: false, 
+          reason: 'low_confidence',
+          best_confidence: bestMatch.confidence 
+        };
+      }
+      
+    } catch (error) {
+      console.error('❌ Error matching payment email:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Apply a confirmed match between email and payment request
+   */
+  async applyMatch(emailRecord, paymentRequest) {
+    const client = await db.pool.connect();
+    
+    try {
+      await client.query('BEGIN');
+      
+      // 1. Update venmo_emails with match
+      await client.query(`
+        UPDATE venmo_emails 
+        SET matched = true,
+            payment_request_id = $1,
+            match_confidence = $2,
+            processing_notes = $3
+        WHERE id = $4
+      `, [
+        paymentRequest.id,
+        paymentRequest.confidence,
+        `Auto-matched with confidence ${(paymentRequest.confidence * 100).toFixed(1)}%`,
+        emailRecord.id
+      ]);
+      
+      // 2. Update payment_requests status
+      await client.query(`
+        UPDATE payment_requests 
+        SET status = 'paid',
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1
+      `, [paymentRequest.id]);
+      
+      // 3. Update venmo_payment_requests if exists
+      if (paymentRequest.venmo_request_id) {
+        await client.query(`
+          UPDATE venmo_payment_requests 
+          SET status = 'paid',
+              paid_date = $1,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $2
+        `, [emailRecord.received_date, paymentRequest.venmo_request_id]);
+      }
+      
+      // 4. Create utility adjustment (recuperation) transaction
+      await this.createRecuperationTransaction(client, paymentRequest, emailRecord);
+      
+      // 5. Send Discord notification
+      const discordService = require('./discordService');
+      await discordService.sendPaymentReceivedNotification({
+        amount: emailRecord.venmo_amount,
+        payer: emailRecord.venmo_actor,
+        bill_type: paymentRequest.bill_type,
+        month: paymentRequest.month,
+        year: paymentRequest.year,
+        note: emailRecord.venmo_note
+      });
+      
+      await client.query('COMMIT');
+      
+      console.log(`✅ Successfully matched and processed payment for request #${paymentRequest.id}`);
+      
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  /**
+   * Create recuperation transaction for roommate payment
+   */
+  async createRecuperationTransaction(client, paymentRequest, emailRecord) {
+    // Create a recuperation transaction (negative amount = income)
+    const recuperationTx = await client.query(`
+      INSERT INTO transactions (
+        plaid_id,
+        account_id,
+        amount,
+        date,
+        name,
+        merchant_name,
+        category,
+        subcategory,
+        expense_type
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9
+      ) RETURNING id
+    `, [
+      `venmo_recuperation_${paymentRequest.id}_${Date.now()}`,
+      'manual_entry',
+      -emailRecord.venmo_amount, // Negative for income
+      emailRecord.received_date,
+      `Utility Recuperation - ${emailRecord.venmo_actor}`,
+      'Venmo',
+      'Transfer',
+      'Roommate Payment',
+      'utility_recuperation'
+    ]);
+    
+    // Create utility adjustment record
+    await client.query(`
+      INSERT INTO utility_adjustments (
+        transaction_id,
+        payment_request_id,
+        adjustment_amount,
+        adjustment_type,
+        description,
+        applied_date
+      ) VALUES ($1, $2, $3, $4, $5, $6)
+    `, [
+      recuperationTx.rows[0].id,
+      paymentRequest.id,
+      emailRecord.venmo_amount,
+      'reimbursement',
+      `Venmo payment from ${emailRecord.venmo_actor} - ${emailRecord.venmo_note || 'No note'}`,
+      emailRecord.received_date
+    ]);
+    
+    console.log(`💰 Created recuperation transaction for $${emailRecord.venmo_amount}`);
+  }
+
+  /**
+   * Get unmatched emails requiring manual review
+   */
+  async getUnmatchedEmails() {
+    return await db.getMany(`
+      SELECT 
+        ve.*,
+        vue.potential_matches,
+        vue.resolution_status
+      FROM venmo_emails ve
+      JOIN venmo_unmatched_emails vue ON ve.id = vue.venmo_email_id
+      WHERE vue.resolution_status = 'pending'
+      ORDER BY ve.received_date DESC
+    `);
+  }
+
+  /**
+   * Manually match an email to a payment request
+   */
+  async manualMatch(emailId, paymentRequestId) {
+    const emailRecord = await db.getOne(
+      'SELECT * FROM venmo_emails WHERE id = $1',
+      [emailId]
+    );
+    
+    const paymentRequest = await db.getOne(
+      'SELECT * FROM payment_requests WHERE id = $1',
+      [paymentRequestId]
+    );
+    
+    if (!emailRecord || !paymentRequest) {
+      throw new Error('Invalid email or payment request ID');
+    }
+    
+    // Apply the match with manual flag
+    await this.applyMatch(emailRecord, {
+      ...paymentRequest,
+      confidence: 1.0 // Manual match has 100% confidence
+    });
+    
+    // Update unmatched record
+    await db.query(`
+      UPDATE venmo_unmatched_emails 
+      SET resolution_status = 'matched',
+          resolved_at = CURRENT_TIMESTAMP,
+          resolved_by = 'manual'
+      WHERE venmo_email_id = $1
+    `, [emailId]);
+    
+    return { success: true };
+  }
+}
+
+module.exports = new VenmoMatchingService();

@@ -1,0 +1,405 @@
+import { useState, useEffect } from 'react';
+import {
+  Box,
+  Card,
+  CardContent,
+  Typography,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TablePagination,
+  Paper,
+  Chip,
+  TextField,
+  MenuItem,
+  Grid,
+  CircularProgress,
+  Alert,
+  IconButton,
+  Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  FormControl,
+  InputLabel,
+  Select,
+  Snackbar,
+} from '@mui/material';
+// Date pickers removed due to dependency issues
+import {
+  FilterList as FilterListIcon,
+  Download as DownloadIcon,
+  Refresh as RefreshIcon,
+  Edit as EditIcon,
+} from '@mui/icons-material';
+import { format } from 'date-fns';
+import { apiService } from '../services/api';
+import { Transaction, ExpenseType } from '../types';
+
+const expenseTypeColors: Record<string, 'success' | 'error' | 'warning' | 'info' | 'default' | 'primary' | 'secondary'> = {
+  rent: 'success',
+  electricity: 'error',
+  water: 'info',
+  internet: 'primary',
+  maintenance: 'warning',
+  yard_maintenance: 'secondary',
+  property_tax: 'error',
+  insurance: 'info',
+  other: 'default',
+};
+
+interface EditDialogState {
+  open: boolean;
+  transaction: Transaction | null;
+  newExpenseType: string;
+}
+
+export default function Transactions() {
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(25);
+  
+  // Filters
+  const [startDate, setStartDate] = useState<Date | null>(null);
+  const [endDate, setEndDate] = useState<Date | null>(null);
+  const [expenseType, setExpenseType] = useState<ExpenseType | 'all'>('all');
+  const [editDialog, setEditDialog] = useState<EditDialogState>({
+    open: false,
+    transaction: null,
+    newExpenseType: '',
+  });
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    fetchTransactions();
+  }, [startDate, endDate, expenseType]);
+
+  const fetchTransactions = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const params: any = {};
+      if (startDate) params.start_date = format(startDate, 'yyyy-MM-dd');
+      if (endDate) params.end_date = format(endDate, 'yyyy-MM-dd');
+      if (expenseType !== 'all') params.expense_type = expenseType;
+      
+      const response = await apiService.getTransactions(params);
+      setTransactions(response.data);
+    } catch (err) {
+      console.error('Error fetching transactions:', err);
+      setError('Failed to load transactions');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRefresh = () => {
+    fetchTransactions();
+  };
+
+  const handleChangePage = (_event: unknown, newPage: number) => {
+    setPage(newPage);
+  };
+
+  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+    }).format(amount);
+  };
+
+  const getExpenseTypeLabel = (type: string | null) => {
+    if (!type) return 'Unknown';
+    return type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+  };
+
+  const handleEditClick = (transaction: Transaction) => {
+    setEditDialog({
+      open: true,
+      transaction: transaction,
+      newExpenseType: transaction.expense_type || 'other',
+    });
+  };
+
+  const handleEditClose = () => {
+    setEditDialog({
+      open: false,
+      transaction: null,
+      newExpenseType: '',
+    });
+  };
+
+  const handleEditSave = async () => {
+    if (!editDialog.transaction || !editDialog.newExpenseType) return;
+    
+    setEditing(true);
+    try {
+      const response = await apiService.updateTransactionCategory(
+        editDialog.transaction.id,
+        editDialog.newExpenseType
+      );
+      
+      const result = response.data;
+      
+      // Update the transaction in the local state
+      setTransactions(transactions.map(tx => 
+        tx.id === editDialog.transaction!.id 
+          ? { ...tx, expense_type: editDialog.newExpenseType as ExpenseType }
+          : tx
+      ));
+      
+      setSuccessMessage('Transaction category updated successfully');
+      
+      // Show suggestion if provided
+      if (result.suggestion) {
+        console.log('ETL Rule Suggestion:', result.suggestion);
+      }
+      
+      handleEditClose();
+    } catch (error) {
+      console.error('Error updating transaction:', error);
+      setError('Failed to update transaction category');
+    } finally {
+      setEditing(false);
+    }
+  };
+
+  if (loading && transactions.length === 0) {
+    return (
+      <Box display="flex" justifyContent="center" alignItems="center" minHeight="60vh">
+        <CircularProgress />
+      </Box>
+    );
+  }
+
+  return (
+    <Box>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+        <Typography variant="h4">Transactions</Typography>
+        <Box>
+          <Tooltip title="Export to Excel">
+            <IconButton>
+              <DownloadIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Refresh">
+            <IconButton onClick={handleRefresh}>
+              <RefreshIcon />
+            </IconButton>
+          </Tooltip>
+        </Box>
+      </Box>
+
+      {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
+      {/* Filters */}
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Box display="flex" alignItems="center" mb={2}>
+            <FilterListIcon sx={{ mr: 1 }} />
+            <Typography variant="h6">Filters</Typography>
+          </Box>
+          
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={6} md={3}>
+              <TextField
+                type="date"
+                fullWidth
+                label="Start Date"
+                value={startDate ? format(startDate, 'yyyy-MM-dd') : ''}
+                onChange={(e) => setStartDate(e.target.value ? new Date(e.target.value) : null)}
+                InputLabelProps={{ shrink: true }}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <TextField
+                type="date"
+                fullWidth
+                label="End Date"
+                value={endDate ? format(endDate, 'yyyy-MM-dd') : ''}
+                onChange={(e) => setEndDate(e.target.value ? new Date(e.target.value) : null)}
+                InputLabelProps={{ shrink: true }}
+              />
+            </Grid>
+            <Grid item xs={12} sm={6} md={3}>
+              <TextField
+                select
+                fullWidth
+                label="Expense Type"
+                value={expenseType}
+                onChange={(e) => setExpenseType(e.target.value as ExpenseType | 'all')}
+              >
+                <MenuItem value="all">All Types</MenuItem>
+                <MenuItem value="rent">Rent Income</MenuItem>
+                <MenuItem value="electricity">Electricity</MenuItem>
+                <MenuItem value="water">Water</MenuItem>
+                <MenuItem value="internet">Internet</MenuItem>
+                <MenuItem value="maintenance">Maintenance</MenuItem>
+                <MenuItem value="yard_maintenance">Yard Maintenance</MenuItem>
+                <MenuItem value="property_tax">Property Tax</MenuItem>
+                <MenuItem value="insurance">Insurance</MenuItem>
+                <MenuItem value="other">Other</MenuItem>
+              </TextField>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
+
+      {/* Transactions Table */}
+      <TableContainer component={Paper}>
+        <Table>
+          <TableHead>
+            <TableRow>
+              <TableCell>Date</TableCell>
+              <TableCell>Description</TableCell>
+              <TableCell>Merchant</TableCell>
+              <TableCell>Category</TableCell>
+              <TableCell align="right">Amount</TableCell>
+              <TableCell align="center">Actions</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {transactions
+              .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
+              .map((transaction) => (
+                <TableRow key={transaction.id} hover>
+                  <TableCell>
+                    {format(new Date(transaction.date), 'MMM dd, yyyy')}
+                  </TableCell>
+                  <TableCell>{transaction.name}</TableCell>
+                  <TableCell>{transaction.merchant_name || '-'}</TableCell>
+                  <TableCell>
+                    <Chip
+                      label={getExpenseTypeLabel(transaction.expense_type)}
+                      color={transaction.expense_type ? (expenseTypeColors[transaction.expense_type] || 'default') : 'default'}
+                      size="small"
+                    />
+                  </TableCell>
+                  <TableCell align="right">
+                    <Typography
+                      variant="body2"
+                      color={transaction.expense_type === 'rent' ? 'success.main' : 'text.primary'}
+                    >
+                      {formatCurrency(transaction.amount)}
+                    </Typography>
+                  </TableCell>
+                  <TableCell align="center">
+                    <Tooltip title="Edit Category">
+                      <IconButton
+                        size="small"
+                        onClick={() => handleEditClick(transaction)}
+                      >
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </TableCell>
+                </TableRow>
+              ))}
+          </TableBody>
+        </Table>
+        <TablePagination
+          rowsPerPageOptions={[10, 25, 50, 100]}
+          component="div"
+          count={transactions.length}
+          rowsPerPage={rowsPerPage}
+          page={page}
+          onPageChange={handleChangePage}
+          onRowsPerPageChange={handleChangeRowsPerPage}
+        />
+      </TableContainer>
+
+      {/* Summary */}
+      {transactions.length > 0 && (
+        <Box mt={3} display="flex" justifyContent="flex-end">
+          <Card>
+            <CardContent>
+              <Typography variant="subtitle2" color="textSecondary">
+                Total ({transactions.length} transactions)
+              </Typography>
+              <Typography variant="h6">
+                {formatCurrency(
+                  transactions.reduce((sum, t) => sum + t.amount, 0)
+                )}
+              </Typography>
+            </CardContent>
+          </Card>
+        </Box>
+      )}
+
+      {/* Edit Dialog */}
+      <Dialog open={editDialog.open} onClose={handleEditClose} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          Edit Transaction Category
+        </DialogTitle>
+        <DialogContent>
+          {editDialog.transaction && (
+            <Box>
+              <Typography variant="body2" color="textSecondary" gutterBottom>
+                Transaction: {editDialog.transaction.name}
+              </Typography>
+              <Typography variant="body2" color="textSecondary" gutterBottom>
+                Date: {format(new Date(editDialog.transaction.date), 'MMM dd, yyyy')}
+              </Typography>
+              <Typography variant="body2" color="textSecondary" gutterBottom>
+                Amount: {formatCurrency(editDialog.transaction.amount)}
+              </Typography>
+              
+              <FormControl fullWidth sx={{ mt: 3 }}>
+                <InputLabel>Expense Type</InputLabel>
+                <Select
+                  value={editDialog.newExpenseType}
+                  onChange={(e) => setEditDialog({ ...editDialog, newExpenseType: e.target.value })}
+                  label="Expense Type"
+                >
+                  <MenuItem value="rent">Rent Income</MenuItem>
+                  <MenuItem value="electricity">Electricity</MenuItem>
+                  <MenuItem value="water">Water</MenuItem>
+                  <MenuItem value="internet">Internet</MenuItem>
+                  <MenuItem value="maintenance">Maintenance</MenuItem>
+                  <MenuItem value="yard_maintenance">Yard Maintenance</MenuItem>
+                  <MenuItem value="property_tax">Property Tax</MenuItem>
+                  <MenuItem value="insurance">Insurance</MenuItem>
+                  <MenuItem value="other">Other</MenuItem>
+                </Select>
+              </FormControl>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleEditClose} disabled={editing}>
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleEditSave} 
+            variant="contained" 
+            disabled={editing || !editDialog.newExpenseType}
+          >
+            {editing ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Success Snackbar */}
+      <Snackbar
+        open={!!successMessage}
+        autoHideDuration={4000}
+        onClose={() => setSuccessMessage(null)}
+        message={successMessage}
+      />
+    </Box>
+  );
+}

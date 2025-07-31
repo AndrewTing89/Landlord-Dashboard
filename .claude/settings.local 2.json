@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(mkdir:*)",
+      "Bash(rm:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(docker:*)",
+      "Bash(kill:*)",
+      "Bash(chmod:*)",
+      "Bash(cp:*)",
+      "Bash(ls:*)",
+      "Bash(node:*)",
+      "Bash(PGPASSWORD=landlord_pass psql -h localhost -U landlord_user -d landlord_dashboard -c '\\dt')",
+      "Bash(npm run migrate:*)",
+      "Bash(docker-compose logs:*)",
+      "Bash(cd:*)",
+      "Bash(cd:*)",
+      "Bash(cd:*)",
+      "Bash(cd:*)"
+    ],
+    "deny": []
+  }
+}

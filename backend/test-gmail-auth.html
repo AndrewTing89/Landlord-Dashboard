@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Gmail Auth Test</title>
+</head>
+<body>
+    <h1>Gmail Authentication Test</h1>
+    
+    <p>Make sure your backend is running on port 3002</p>
+    
+    <button onclick="authenticate()">Connect Gmail</button>
+    
+    <pre id="status"></pre>
+    
+    <script>
+        function authenticate() {
+            // Direct link to backend OAuth endpoint
+            window.location.href = 'http://localhost:3002/api/gmail/auth';
+        }
+        
+        // Check for OAuth callback params
+        const urlParams = new URLSearchParams(window.location.search);
+        const gmailStatus = urlParams.get('gmail');
+        
+        if (gmailStatus === 'connected') {
+            document.getElementById('status').textContent = '✅ Gmail connected successfully!';
+        } else if (gmailStatus === 'error') {
+            document.getElementById('status').textContent = '❌ Failed to connect Gmail';
+        }
+    </script>
+</body>
+</html>

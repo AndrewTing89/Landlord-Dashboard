@@ -1,0 +1,41 @@
+{
+  "name": "landlord-dashboard-backend",
+  "version": "1.0.0",
+  "description": "Backend services for landlord dashboard",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "migrate": "node src/db/migrate.js",
+    "seed": "node src/db/seed.js",
+    "test": "jest",
+    "test:lambda": "node src/test-lambda.js"
+  },
+  "dependencies": {
+    "aws-sdk": "^2.1515.0",
+    "axios": "^1.11.0",
+    "chalk": "^5.4.1",
+    "cli-table3": "^0.6.5",
+    "cors": "^2.8.5",
+    "csv-parse": "^5.5.0",
+    "csv-parser": "^3.2.0",
+    "dotenv": "^16.3.1",
+    "exceljs": "^4.4.0",
+    "express": "^4.18.2",
+    "googleapis": "^154.1.0",
+    "imap": "^0.8.19",
+    "mailparser": "^3.6.5",
+    "moment": "^2.29.4",
+    "nodemailer": "^6.9.7",
+    "pdf-parse": "^1.1.1",
+    "pg": "^8.11.3",
+    "plaid": "^23.0.0",
+    "puppeteer": "^21.0.0",
+    "twilio": "^4.19.0",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.2"
+  }
+}
