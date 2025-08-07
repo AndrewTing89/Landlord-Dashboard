@@ -22,6 +22,8 @@ import {
   DialogContent,
   DialogActions,
   IconButton,
+  TextField,
+  MenuItem,
 } from '@mui/material';
 import {
   Email as EmailIcon,
@@ -34,6 +36,7 @@ import {
 import { format } from 'date-fns';
 import axios from 'axios';
 import config from '../config';
+import { useNavigate } from 'react-router-dom';
 
 interface EmailStats {
   total_emails: string;
@@ -44,13 +47,14 @@ interface EmailStats {
 }
 
 export default function EmailSyncManagement() {
+  const navigate = useNavigate();
   const [emailStats, setEmailStats] = useState<EmailStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
-  const [confirmSyncType, setConfirmSyncType] = useState<'recent' | 'full' | null>(null);
+  const [syncDialogOpen, setSyncDialogOpen] = useState(false);
+  const [lookbackDays, setLookbackDays] = useState(7);
 
   useEffect(() => {
     fetchData();
@@ -88,26 +92,28 @@ export default function EmailSyncManagement() {
     }
   };
 
-  const handleSyncClick = (type: 'recent' | 'full') => {
-    setConfirmSyncType(type);
-    setConfirmDialogOpen(true);
+  const handleSyncClick = () => {
+    setSyncDialogOpen(true);
   };
 
   const executeSync = async () => {
-    setConfirmDialogOpen(false);
+    setSyncDialogOpen(false);
     setSyncing(true);
     setError(null);
     setSuccessMessage(null);
     
     try {
-      const endpoint = confirmSyncType === 'full' ? '/api/gmail/sync-all' : '/api/gmail/sync';
-      const response = await axios.post(`${config.api.baseURL}${endpoint}`);
+      // Use the Gmail API sync endpoint with lookback days parameter
+      const response = await axios.post(`${config.api.baseURL}/api/gmail/sync`, {
+        lookbackDays: lookbackDays
+      });
       
       if (response.data) {
-        const { emails_found, new_emails, processed } = response.data;
+        const { total, processed, matched, emails_found, new_emails } = response.data;
         setSuccessMessage(
-          `Sync completed! Found ${emails_found || 0} emails, ${new_emails || 0} new. ` +
-          `Processed ${processed || 0} emails.`
+          `Sync completed! Found ${total || emails_found || 0} emails, ` +
+          `processed ${processed || new_emails || 0} new emails, ` +
+          `matched ${matched || 0} to payment requests.`
         );
         fetchData();
       }
@@ -230,50 +236,28 @@ export default function EmailSyncManagement() {
             </Box>
           )}
 
-          <Grid container spacing={2}>
-            <Grid item xs={12} sm={6}>
-              <Card variant="outlined">
-                <CardContent>
-                  <Typography variant="h6" gutterBottom>
-                    Recent Email Sync
-                  </Typography>
-                  <Typography variant="body2" color="textSecondary" paragraph>
-                    Fetches Venmo emails from the last 7 days and matches them to payment requests.
-                  </Typography>
-                  <Button
-                    variant="contained"
-                    startIcon={<EmailIcon />}
-                    onClick={() => handleSyncClick('recent')}
-                    disabled={syncing || !emailStats?.gmail_connected}
-                    fullWidth
-                  >
-                    Sync Recent Emails
-                  </Button>
-                </CardContent>
-              </Card>
-            </Grid>
-            <Grid item xs={12} sm={6}>
-              <Card variant="outlined">
-                <CardContent>
-                  <Typography variant="h6" gutterBottom>
-                    Full Email Sync
-                  </Typography>
-                  <Typography variant="body2" color="textSecondary" paragraph>
-                    Fetches Venmo emails from the last 30 days. Use this for initial setup or catching up.
-                  </Typography>
-                  <Button
-                    variant="outlined"
-                    startIcon={<EmailIcon />}
-                    onClick={() => handleSyncClick('full')}
-                    disabled={syncing || !emailStats?.gmail_connected}
-                    fullWidth
-                  >
-                    Full Email Sync
-                  </Button>
-                </CardContent>
-              </Card>
-            </Grid>
-          </Grid>
+          <Card variant="outlined">
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Sync Venmo Emails
+              </Typography>
+              <Typography variant="body2" color="textSecondary" paragraph>
+                Fetch and process Venmo payment confirmation emails from your Gmail account.
+              </Typography>
+              <Box display="flex" justifyContent="center">
+                <Button
+                  variant="contained"
+                  size="large"
+                  startIcon={<EmailIcon />}
+                  onClick={handleSyncClick}
+                  disabled={syncing || !emailStats?.gmail_connected}
+                  sx={{ px: 4 }}
+                >
+                  Sync Emails
+                </Button>
+              </Box>
+            </CardContent>
+          </Card>
 
           {emailStats?.gmail_connected && (
             <Box mt={2} display="flex" justifyContent="center">
@@ -286,6 +270,41 @@ export default function EmailSyncManagement() {
                 Manage Gmail Connection
               </Button>
             </Box>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Unmatched Emails */}
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            Unmatched Venmo Emails
+          </Typography>
+          
+          {emailStats?.unmatched_emails && parseInt(emailStats.unmatched_emails) > 0 ? (
+            <>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                {emailStats.unmatched_emails} Venmo email{parseInt(emailStats.unmatched_emails) > 1 ? 's' : ''} couldn't be automatically matched to payment requests. Review them below.
+              </Alert>
+              
+              <Button 
+                variant="outlined" 
+                startIcon={<RefreshIcon />}
+                onClick={() => {
+                  // Navigate to Payment Requests page
+                  // The tab will be set via state or URL parameter
+                  navigate('/payments');
+                  // Store in sessionStorage to communicate with Payment Requests page
+                  sessionStorage.setItem('openUnmatchedTab', 'true');
+                }}
+              >
+                View Unmatched Emails
+              </Button>
+            </>
+          ) : (
+            <Typography color="textSecondary">
+              All Venmo emails have been successfully matched to payment requests.
+            </Typography>
           )}
         </CardContent>
       </Card>
@@ -345,28 +364,45 @@ export default function EmailSyncManagement() {
         </CardContent>
       </Card>
 
-      {/* Confirmation Dialog */}
-      <Dialog open={confirmDialogOpen} onClose={() => setConfirmDialogOpen(false)} maxWidth="sm" fullWidth>
+      {/* Sync Configuration Dialog */}
+      <Dialog open={syncDialogOpen} onClose={() => setSyncDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>
-          Confirm {confirmSyncType === 'recent' ? 'Recent' : 'Full'} Email Sync
+          Configure Email Sync
         </DialogTitle>
         <DialogContent>
-          <Alert severity="info" sx={{ mt: 2 }}>
-            <Typography variant="body2">
+          <Box sx={{ mt: 2 }}>
+            <TextField
+              select
+              fullWidth
+              label="Time Range"
+              value={lookbackDays}
+              onChange={(e) => setLookbackDays(Number(e.target.value))}
+              helperText="How far back to search for Venmo emails"
+            >
+              <MenuItem value={7}>Last 7 days</MenuItem>
+              <MenuItem value={14}>Last 14 days</MenuItem>
+              <MenuItem value={30}>Last 30 days</MenuItem>
+              <MenuItem value={60}>Last 60 days</MenuItem>
+              <MenuItem value={90}>Last 90 days</MenuItem>
+            </TextField>
+          </Box>
+          
+          <Alert severity="info" sx={{ mt: 3 }}>
+            <Typography variant="body2" fontWeight="bold" gutterBottom>
               This will:
             </Typography>
             <ul style={{ margin: '8px 0', paddingLeft: '20px' }}>
-              <li>Connect to your Gmail account</li>
-              <li>Search for Venmo emails from the last {confirmSyncType === 'recent' ? '7' : '30'} days</li>
-              <li>Parse payment amounts and details</li>
+              <li>Search for Venmo emails from the last {lookbackDays} days</li>
+              <li>Parse payment amounts and payer information</li>
               <li>Match emails to existing payment requests</li>
-              <li>Mark unmatched emails for review</li>
+              <li>Update payment status automatically</li>
+              <li>Mark unmatched emails for manual review</li>
             </ul>
           </Alert>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setConfirmDialogOpen(false)}>Cancel</Button>
-          <Button onClick={executeSync} variant="contained" color="primary">
+          <Button onClick={() => setSyncDialogOpen(false)}>Cancel</Button>
+          <Button onClick={executeSync} variant="contained" color="primary" startIcon={<EmailIcon />}>
             Start Sync
           </Button>
         </DialogActions>

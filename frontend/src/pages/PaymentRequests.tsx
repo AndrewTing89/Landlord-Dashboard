@@ -115,6 +115,8 @@ export default function PaymentRequests() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [copiedId, setCopiedId] = useState<number | null>(null);
   const [checkingEmails, setCheckingEmails] = useState(false);
+  const [emailMatchDialogOpen, setEmailMatchDialogOpen] = useState(false);
+  const [selectedEmailMatch, setSelectedEmailMatch] = useState<{request: PaymentRequest; emails: VenmoEmail[]} | null>(null);
   const [sendingSmsId, setSendingSmsId] = useState<number | null>(null);
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [requestToMarkPaid, setRequestToMarkPaid] = useState<PaymentRequest | null>(null);
@@ -134,6 +136,15 @@ export default function PaymentRequests() {
 
   useEffect(() => {
     fetchAllData();
+    
+    // Check if we should open the unmatched tab
+    const shouldOpenUnmatched = sessionStorage.getItem('openUnmatchedTab');
+    if (shouldOpenUnmatched === 'true') {
+      // Set tab to index 2 (Unmatched tab)
+      setTabValue(2);
+      // Clear the flag
+      sessionStorage.removeItem('openUnmatchedTab');
+    }
   }, []);
 
   const fetchAllData = async () => {
@@ -176,14 +187,9 @@ export default function PaymentRequests() {
   };
 
   const handleOpenVenmo = (request: PaymentRequest) => {
-    if (isMobile) {
-      // On mobile, directly open the Venmo app
-      window.location.href = request.venmo_link;
-    } else {
-      // On desktop, show instructions
-      setSelectedRequest(request);
-      setDialogOpen(true);
-    }
+    // Simple approach - just open the link in a new tab
+    // The /u/ format works on both mobile and desktop
+    window.open(request.venmo_link, '_blank');
   };
 
   const handleCopyLink = async (request: PaymentRequest) => {
@@ -546,6 +552,21 @@ export default function PaymentRequests() {
                                 </Typography>
                               </Box>
                               <Box display="flex" gap={0.5} alignItems="center">
+                                {/* Show email match indicator */}
+                                {emailsByRequest[request.id] && emailsByRequest[request.id].length > 0 && (
+                                  <Chip
+                                    icon={<EmailIcon />}
+                                    label="Email Match"
+                                    size="small"
+                                    color="info"
+                                    variant="outlined"
+                                    onClick={() => {
+                                      setSelectedEmailMatch({ request, emails: emailsByRequest[request.id] });
+                                      setEmailMatchDialogOpen(true);
+                                    }}
+                                    sx={{ cursor: 'pointer' }}
+                                  />
+                                )}
                                 {request.status !== 'paid' && request.status !== 'foregone' && (
                                   <>
                                     <Button
@@ -674,8 +695,8 @@ export default function PaymentRequests() {
         </>
       )}
 
-      {/* Desktop instruction dialog */}
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
+      {/* Desktop instruction dialog - removed since we now use simple links */}
+      <Dialog open={false} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Venmo Payment Request</DialogTitle>
         <DialogContent>
           <Typography variant="body1" paragraph>
@@ -720,6 +741,32 @@ export default function PaymentRequests() {
               <Typography variant="body2" color="textSecondary">
                 {selectedRequest.bill_type} bill for {format(new Date(selectedRequest.year, selectedRequest.month - 1), 'MMMM yyyy')}
               </Typography>
+              
+              <Box mt={2} display="flex" gap={1} flexDirection="column">
+                <Typography variant="body2" color="textSecondary">
+                  Venmo Links:
+                </Typography>
+                <Button
+                  variant="outlined"
+                  fullWidth
+                  startIcon={<LaunchIcon />}
+                  onClick={() => window.location.href = selectedRequest.venmo_link}
+                  sx={{ justifyContent: 'flex-start' }}
+                >
+                  Mobile Link (Open in Venmo App)
+                </Button>
+                {selectedRequest.venmo_web_link && (
+                  <Button
+                    variant="outlined"
+                    fullWidth
+                    startIcon={<LaunchIcon />}
+                    onClick={() => window.open(selectedRequest.venmo_web_link, '_blank')}
+                    sx={{ justifyContent: 'flex-start' }}
+                  >
+                    Web Link (Open in Browser)
+                  </Button>
+                )}
+              </Box>
             </Box>
           )}
         </DialogContent>
@@ -1242,6 +1289,99 @@ export default function PaymentRequests() {
           )}
         </Box>
       </Drawer>
+
+      {/* Email Match Dialog */}
+      <Dialog
+        open={emailMatchDialogOpen}
+        onClose={() => setEmailMatchDialogOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          <Box display="flex" justifyContent="space-between" alignItems="center">
+            <Typography variant="h6">Venmo Email Match</Typography>
+            <IconButton onClick={() => setEmailMatchDialogOpen(false)} size="small">
+              <CloseIcon />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          {selectedEmailMatch && (
+            <>
+              <Alert severity="info" sx={{ mb: 2 }}>
+                We found a Venmo payment email that may match this payment request.
+              </Alert>
+              
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="subtitle2" gutterBottom>Payment Request</Typography>
+                <Card variant="outlined">
+                  <CardContent>
+                    <Typography variant="body2">
+                      <strong>Roommate:</strong> {selectedEmailMatch.request.roommate_name}
+                    </Typography>
+                    <Typography variant="body2">
+                      <strong>Amount:</strong> {formatCurrency(selectedEmailMatch.request.amount)}
+                    </Typography>
+                    <Typography variant="body2">
+                      <strong>Type:</strong> {selectedEmailMatch.request.bill_type}
+                    </Typography>
+                    <Typography variant="body2">
+                      <strong>Created:</strong> {format(new Date(selectedEmailMatch.request.request_date), 'MMM d, yyyy')}
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Box>
+              
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="subtitle2" gutterBottom>Matched Email(s)</Typography>
+                {selectedEmailMatch.emails.map((email) => (
+                  <Card key={email.id} variant="outlined" sx={{ mb: 1 }}>
+                    <CardContent>
+                      <Typography variant="body2" gutterBottom>
+                        <strong>{email.subject}</strong>
+                      </Typography>
+                      <Typography variant="body2">
+                        <strong>From:</strong> {email.venmo_actor}
+                      </Typography>
+                      <Typography variant="body2">
+                        <strong>Amount:</strong> ${email.venmo_amount}
+                      </Typography>
+                      <Typography variant="body2">
+                        <strong>Date:</strong> {format(new Date(email.received_date), 'MMM d, yyyy h:mm a')}
+                      </Typography>
+                      {email.venmo_note && (
+                        <Typography variant="body2">
+                          <strong>Note:</strong> {email.venmo_note}
+                        </Typography>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </Box>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEmailMatchDialogOpen(false)}>
+            Close
+          </Button>
+          {selectedEmailMatch && selectedEmailMatch.request.status !== 'paid' && (
+            <Button 
+              variant="contained" 
+              color="primary"
+              onClick={async () => {
+                if (selectedEmailMatch) {
+                  await apiService.markPaymentPaid(selectedEmailMatch.request.id);
+                  await fetchAllData();
+                  setEmailMatchDialogOpen(false);
+                }
+              }}
+            >
+              Mark as Paid
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

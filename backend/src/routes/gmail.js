@@ -63,10 +63,14 @@ router.get('/status', asyncHandler(async (req, res) => {
 
 // Process Venmo emails
 router.post('/sync', asyncHandler(async (req, res) => {
-  const result = await gmailService.processVenmoEmails();
+  const { lookbackDays = 7 } = req.body;
+  
+  // Pass lookbackDays to the service
+  const result = await gmailService.processVenmoEmails(lookbackDays);
   
   sendSuccess(res, {
     message: 'Email sync completed',
+    lookbackDays,
     ...result
   });
 }));

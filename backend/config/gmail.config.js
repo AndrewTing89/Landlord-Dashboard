@@ -18,9 +18,11 @@ module.exports = {
     // Gmail search queries for different Venmo email types
     queries: {
       paymentReceived: 'from:venmo@venmo.com (subject:"paid you" OR subject:"paid your")',
+      paymentSent: 'from:venmo@venmo.com subject:"You paid"',
       requestSent: 'from:venmo@venmo.com subject:"You requested"',
       requestReminder: 'from:venmo@venmo.com subject:"Reminder:"',
-      requestCancelled: 'from:venmo@venmo.com subject:"cancelled the request"'
+      requestCancelled: 'from:venmo@venmo.com subject:"cancelled the request"',
+      allVenmo: 'from:venmo@venmo.com'
     },
     
     // Maximum emails to process per sync

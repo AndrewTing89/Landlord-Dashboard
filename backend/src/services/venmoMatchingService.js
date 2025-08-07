@@ -59,6 +59,49 @@ class VenmoMatchingService {
     console.log(`🔍 Attempting to match payment email: $${emailRecord.venmo_amount} from ${emailRecord.venmo_actor}`);
     
     try {
+      // SPECIAL RULE: Rent detection (Ushi payment >= $1600 from Aug 2025 onwards)
+      const isUshi = emailRecord.venmo_actor && 
+        (emailRecord.venmo_actor.toLowerCase().includes('ushi') || 
+         emailRecord.venmo_actor.toLowerCase().includes(process.env.ROOMMATE_NAME?.toLowerCase() || 'ushi'));
+      
+      if (isUshi && emailRecord.venmo_amount >= 1600) {
+        const emailDate = new Date(emailRecord.received_date);
+        
+        // Only apply this rule from August 2025 onwards
+        if (emailDate >= new Date('2025-08-01')) {
+          console.log(`🏠 Detected rent payment: $${emailRecord.venmo_amount} from Ushi`);
+          
+          // Find the rent payment request for this month
+          const month = emailDate.getMonth() + 1;
+          const year = emailDate.getFullYear();
+          
+          const rentRequest = await db.getOne(`
+            SELECT pr.*, ub.bill_type
+            FROM payment_requests pr
+            LEFT JOIN utility_bills ub ON pr.utility_bill_id = ub.id
+            WHERE pr.status = 'pending'
+              AND EXTRACT(MONTH FROM pr.created_at) = $1
+              AND EXTRACT(YEAR FROM pr.created_at) = $2
+              AND pr.amount >= 1600
+            ORDER BY pr.created_at DESC
+            LIMIT 1
+          `, [month, year]);
+          
+          if (rentRequest) {
+            console.log(`✅ Matched to rent payment request #${rentRequest.id}`);
+            await this.applyMatch(emailRecord, { ...rentRequest, confidence: 1.0 });
+            return { 
+              matched: true, 
+              payment_request_id: rentRequest.id,
+              confidence: 1.0,
+              match_method: 'rent_rule'
+            };
+          } else {
+            console.log(`⚠️ No rent payment request found for ${month}/${year}, storing as rent income`);
+            // Could create a rent transaction here if needed
+          }
+        }
+      }
       // First, try to match by tracking ID if available
       if (emailRecord.tracking_id) {
         console.log(`🏷️  Found tracking ID in email: ${emailRecord.tracking_id}`);
@@ -105,23 +148,17 @@ class VenmoMatchingService {
       // If no tracking ID match, fall back to fuzzy matching
       console.log('🔍 No tracking ID match, falling back to fuzzy matching...');
       
-      // Find potential payment request matches
-      const timeWindow = new Date(emailRecord.received_date);
-      timeWindow.setHours(timeWindow.getHours() - gmailConfig.matching.timeWindowHours);
-      
+      // Find potential payment request matches - NO TIME WINDOW
+      // Just match by amount and name
       const potentialMatches = await db.getMany(`
         SELECT pr.*, vpr.recipient_name, ub.bill_type
         FROM payment_requests pr
         LEFT JOIN venmo_payment_requests vpr ON pr.utility_bill_id = vpr.utility_bill_id
         LEFT JOIN utility_bills ub ON pr.utility_bill_id = ub.id
         WHERE pr.status = 'pending'
-          AND pr.created_at >= $1
-          AND pr.created_at <= $2
-          AND ABS(pr.amount - $3) <= $4
-        ORDER BY ABS(pr.amount - $3) ASC, pr.created_at DESC
+          AND ABS(pr.amount - $1) <= $2
+        ORDER BY ABS(pr.amount - $1) ASC, pr.created_at DESC
       `, [
-        timeWindow,
-        emailRecord.received_date,
         emailRecord.venmo_amount,
         gmailConfig.matching.amountTolerance
       ]);
@@ -140,9 +177,8 @@ class VenmoMatchingService {
           amount_match: 1 - Math.abs(parseFloat(request.amount) - emailRecord.venmo_amount) / parseFloat(request.amount),
           name_match: this.calculateStringSimilarity(
             emailRecord.venmo_actor,
-            request.recipient_name || request.roommate_name
+            request.recipient_name || request.roommate_name || process.env.ROOMMATE_NAME || 'Ushi Lo'
           ),
-          time_proximity: 1 - (emailRecord.received_date - request.created_at) / (gmailConfig.matching.timeWindowHours * 60 * 60 * 1000),
           note_match: 0
         };
         
@@ -161,12 +197,11 @@ class VenmoMatchingService {
           scores.note_match = noteMatch ? 1 : 0;
         }
         
-        // Calculate weighted confidence score
+        // Calculate weighted confidence score (no time proximity)
         scores.confidence = (
-          scores.amount_match * 0.4 +
-          scores.name_match * 0.3 +
-          scores.time_proximity * 0.2 +
-          scores.note_match * 0.1
+          scores.amount_match * 0.5 +    // Amount is most important
+          scores.name_match * 0.35 +     // Name is second most important
+          scores.note_match * 0.15        // Note keywords are helpful
         );
         
         return {
@@ -343,14 +378,16 @@ class VenmoMatchingService {
    * Get unmatched emails requiring manual review
    */
   async getUnmatchedEmails() {
+    // Get ALL unmatched emails, not just those in the venmo_unmatched_emails table
     return await db.getMany(`
       SELECT 
         ve.*,
         vue.potential_matches,
         vue.resolution_status
       FROM venmo_emails ve
-      JOIN venmo_unmatched_emails vue ON ve.id = vue.venmo_email_id
-      WHERE vue.resolution_status = 'pending'
+      LEFT JOIN venmo_unmatched_emails vue ON ve.id = vue.venmo_email_id
+      WHERE ve.matched = false
+        OR vue.resolution_status = 'pending'
       ORDER BY ve.received_date DESC
     `);
   }

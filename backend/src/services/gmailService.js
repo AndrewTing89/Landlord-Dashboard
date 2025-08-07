@@ -96,7 +96,7 @@ class GmailService {
   /**
    * Search for Venmo emails
    */
-  async searchVenmoEmails(emailType = 'all') {
+  async searchVenmoEmails(emailType = 'all', lookbackDays = 7) {
     if (!await this.loadTokens()) {
       throw new Error('Gmail not authenticated. Please complete OAuth flow first.');
     }
@@ -112,7 +112,7 @@ class GmailService {
 
       // Search with each query
       for (const query of queries) {
-        const searchQuery = `${query} newer_than:${gmailConfig.search.lookbackDays}d`;
+        const searchQuery = `${query} newer_than:${lookbackDays}d`;
         
         const response = await gmail.users.messages.list({
           userId: 'me',
@@ -195,7 +195,15 @@ class GmailService {
     };
 
     // Determine email type
-    if (email.subject.includes('paid you') || email.subject.includes('paid your')) {
+    if (email.subject.includes('You paid')) {
+      parsed.email_type = 'payment_sent';
+      // Extract recipient and amount from "You paid PERSON $AMOUNT"
+      const match = email.subject.match(/You paid (.+?) \$([0-9,]+\.?\d{0,2})/);
+      if (match) {
+        parsed.venmo_actor = match[1].trim();
+        parsed.venmo_amount = parseFloat(match[2].replace(/,/g, ''));
+      }
+    } else if (email.subject.includes('paid you') || email.subject.includes('paid your')) {
       parsed.email_type = 'payment_received';
       const match = gmailConfig.patterns.paymentReceived;
       
@@ -290,6 +298,24 @@ class GmailService {
       let matched = 0;
       
       for (const email of emails) {
+        // FILTER: Only process emails related to Ushi
+        const roommateNames = [
+          process.env.ROOMMATE_NAME?.toLowerCase() || 'ushi',
+          'ushi',
+          'ushi lo'
+        ];
+        
+        const isRoommateRelated = roommateNames.some(name => 
+          email.subject.toLowerCase().includes(name) ||
+          email.body.toLowerCase().includes(name) ||
+          email.snippet.toLowerCase().includes(name)
+        );
+        
+        if (!isRoommateRelated) {
+          console.log(`⏭️  Skipping non-roommate email: ${email.subject}`);
+          continue;
+        }
+        
         // Check if already processed
         const existing = await db.getOne(
           'SELECT id FROM venmo_emails WHERE gmail_message_id = $1',

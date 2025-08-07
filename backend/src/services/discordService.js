@@ -36,28 +36,43 @@ class DiscordService {
     const embed = {
       embeds: [{
         title: `${billIcon} New ${companyName} Payment Request`,
-        description: `**${merchantName || companyName}** bill for ${new Date(year, month - 1).toLocaleString('default', { month: 'long', year: 'numeric' })}\n\n💳 **[Click here to make a Venmo request](${venmoLink})**`,
+        description: `**${merchantName || companyName}** bill for ${new Date(year, month - 1).toLocaleString('default', { month: 'long', year: 'numeric' })}`,
         color: color,
         fields: [
           {
-            name: '💵 Total Bill',
+            name: '📊 Total Bill Amount',
             value: `$${totalAmount}`,
             inline: true
           },
           {
-            name: '🔄 Split Amount (1/3)',
+            name: '💰 Your Share (1/3)',
             value: `**$${splitAmount}**`,
             inline: true
           },
           {
-            name: '📅 Due Date',
-            value: dueDate || 'N/A',
+            name: '🏢 Company',
+            value: merchantName || companyName,
+            inline: true
+          },
+          {
+            name: '📅 Bill Date',
+            value: `${new Date(year, month - 1).toLocaleString('default', { month: 'short', year: 'numeric' })}`,
+            inline: true
+          },
+          {
+            name: '✅ Status',
+            value: 'Already paid in full',
             inline: true
           },
           {
             name: '🏷️ Tracking ID',
-            value: trackingId || 'N/A',
+            value: `\`${trackingId || 'N/A'}\``,
             inline: true
+          },
+          {
+            name: '💳 Venmo Payment Link',
+            value: `**[Click to Request Payment](${venmoLink})**`,
+            inline: false
           }
         ],
         footer: {

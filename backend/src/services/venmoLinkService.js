@@ -11,25 +11,25 @@ class VenmoLinkService {
    * @param {string} username - Venmo username to request from
    * @param {number} amount - Amount to request
    * @param {string} note - Note for the payment
-   * @returns {string} Venmo deep link URL
+   * @returns {string} Venmo link URL
    */
   generateVenmoLink(username, amount, note) {
-    // Venmo URL scheme for requesting money
-    // Format: venmo://paycharge?txn=charge&recipients={username}&amount={amount}&note={note}
-    
     // Remove @ symbol if present in username
     const cleanUsername = username.replace('@', '');
     
-    // URL encode the note to handle special characters
-    const encodedNote = encodeURIComponent(note);
+    // Keep the note format with newlines and underscores
+    // This creates a cleaner URL without + signs everywhere
+    const cleanNote = note
+      .replace(/[^a-zA-Z0-9\n\$\.\-\&\/\(\)_:]/g, '')  // Keep letters, numbers, newlines, $, ., -, &, /, (), _, :
+      .trim();
     
-    // Generate both web and app links
-    // Use /u/ format to avoid issues with @ symbols and redirects
-    const webLink = `https://venmo.com/u/${cleanUsername}?txn=charge&amount=${amount.toFixed(2)}&note=${encodedNote}`;
-    const appLink = `venmo://paycharge?txn=charge&recipients=${cleanUsername}&amount=${amount.toFixed(2)}&note=${encodedNote}`;
+    // URL encode the note - newlines will become %0A which is cleaner than spaces becoming +
+    const encodedNote = encodeURIComponent(cleanNote);
     
-    // Return web link as it works on both desktop and mobile
-    return webLink;
+    // Use the simple format without /u/ that's working for you
+    const venmoLink = `https://venmo.com/${cleanUsername}?txn=charge&amount=${amount.toFixed(2)}&note=${encodedNote}`;
+    
+    return venmoLink;
   }
 
   /**
@@ -72,6 +72,13 @@ class VenmoLinkService {
       );
       const noteWithTracking = `${baseNote} [${trackingId}]`;
       
+      // Generate Venmo link
+      const venmoLink = this.generateVenmoLink(
+        roommateConfig.roommate.venmoUsername,
+        roommateShare,
+        noteWithTracking
+      );
+      
       // Create payment request record
       const paymentRequest = await db.insert('payment_requests', {
         utility_bill_id: bill.id,
@@ -86,11 +93,7 @@ class VenmoLinkService {
         month: bill.month,
         year: bill.year,
         tracking_id: trackingId,
-        venmo_link: this.generateVenmoLink(
-          roommateConfig.roommate.venmoUsername,
-          roommateShare,
-          noteWithTracking
-        )
+        venmo_link: venmoLink
       });
       
       console.log(`Created payment request: ${paymentRequest.id}`);
@@ -99,7 +102,7 @@ class VenmoLinkService {
       const venmoRequest = await db.insert('venmo_payment_requests', {
         recipient_name: roommateConfig.roommate.name,
         amount: roommateShare.toFixed(2),
-        description: note,
+        description: noteWithTracking,
         status: 'pending',
         request_date: new Date(),
         utility_bill_id: bill.id,
@@ -110,13 +113,6 @@ class VenmoLinkService {
       await db.query(
         'UPDATE payment_requests SET venmo_request_id = $1 WHERE id = $2',
         [venmoRequest.id, paymentRequest.id]
-      );
-      
-      // Generate Venmo link for SMS
-      const venmoLink = this.generateVenmoLink(
-        roommateConfig.roommate.venmoUsername,
-        roommateShare,
-        note
       );
       
       // Send SMS notification to landlord's phone

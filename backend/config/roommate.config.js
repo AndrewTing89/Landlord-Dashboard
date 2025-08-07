@@ -19,13 +19,13 @@ module.exports = {
   // Bill types that should generate payment requests
   billTypesForSplit: ['electricity', 'water'],
   
-  // Message templates
+  // Message templates - Use key:value format with line breaks for cleaner URLs
   messageTemplates: {
     electricity: (billAmount, splitAmount, paidDate) => 
-      `PG&E bill for ${paidDate}: Total $${billAmount.toFixed(2)}, your share is $${splitAmount.toFixed(2)} (1/3). I've already paid the full amount.`,
+      `PG&E\nTotal:$${billAmount.toFixed(2)}\nYour_share(1/3):$${splitAmount.toFixed(2)}\nPaid:${paidDate.replace(/\s+/g, '_')}`,
     
     water: (billAmount, splitAmount, paidDate) => 
-      `Water bill for ${paidDate}: Total $${billAmount.toFixed(2)}, your share is $${splitAmount.toFixed(2)} (1/3). I've already paid the full amount.`,
+      `Great_Oaks_Water\nTotal:$${billAmount.toFixed(2)}\nYour_share(1/3):$${splitAmount.toFixed(2)}\nPaid:${paidDate.replace(/\s+/g, '_')}`,
     
     sms: (billType, venmoLink) => 
       `${billType === 'electricity' ? 'PG&E' : 'Water'} bill payment request: ${venmoLink}`
