@@ -174,6 +174,25 @@ class VenmoEmailMonitorService {
         
         console.log(`Created payment request: ${recipientName} for $${amount}`);
         
+        // Try to match this with a pending payment request and update status to 'sent'
+        const pendingRequest = await db.getOne(
+          `SELECT id FROM payment_requests 
+           WHERE amount::numeric = $1 
+           AND roommate_name ILIKE $2
+           AND status = 'pending'
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          [amount, `%${recipientName.split(' ')[0]}%`] // Match by first name
+        );
+        
+        if (pendingRequest) {
+          await db.query(
+            'UPDATE payment_requests SET status = $1, updated_at = NOW() WHERE id = $2',
+            ['sent', pendingRequest.id]
+          );
+          console.log(`✅ Updated payment request #${pendingRequest.id} status to 'sent'`);
+        }
+        
         // Link to utility bill if this matches a recent bill split
         if (note.toLowerCase().includes('pge') || note.toLowerCase().includes('water')) {
           await this.linkToUtilityBill(request.id, amount, note);

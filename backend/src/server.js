@@ -424,8 +424,11 @@ app.get('/api/payment-requests', async (req, res) => {
     }
     
     if (status) {
-      params.push(status);
-      query += ` AND pr.status = $${params.length}`;
+      // Handle comma-separated statuses (e.g., 'pending,sent')
+      const statuses = status.split(',').map(s => s.trim());
+      const statusPlaceholders = statuses.map((_, i) => `$${params.length + i + 1}`).join(',');
+      params.push(...statuses);
+      query += ` AND pr.status IN (${statusPlaceholders})`;
     }
     
     query += ' ORDER BY pr.created_at DESC';
@@ -635,11 +638,8 @@ app.post('/api/payment-requests/:id/send-sms', async (req, res) => {
     try {
       await discordService.sendPaymentRequest(notificationData);
       
-      // Update payment request status to 'sent'
-      await db.query(
-        'UPDATE payment_requests SET status = $1 WHERE id = $2',
-        ['sent', id]
-      );
+      // Don't update status to 'sent' here - wait for email confirmation
+      // Status will change to 'sent' only when Venmo email is matched
       
       res.json({ 
         success: true, 

@@ -156,7 +156,7 @@ export default function Dashboard() {
           start_date: new Date(currentYear, 0, 1).toISOString().split('T')[0], // Start of year
           end_date: new Date().toISOString().split('T')[0], // Today
         }),
-        apiService.getPaymentRequests({ status: 'pending' }),
+        apiService.getPaymentRequests({ status: 'pending,sent' }),
         apiService.getMonthlyComparison(currentYear),
       ]);
 
@@ -286,6 +286,9 @@ export default function Dashboard() {
   };
 
   const getPaymentStatus = (request: PaymentRequest) => {
+    const hasRequestSent = request.status === 'sent';
+    const hasPaymentReceived = request.status === 'paid';
+    
     const steps = [
       { 
         label: 'Record Created',
@@ -293,13 +296,13 @@ export default function Dashboard() {
         active: request.status === 'pending'
       },
       { 
-        label: 'Request: Pending',
-        completed: request.status === 'sent' || request.status === 'paid',
-        active: request.status === 'sent'
+        label: hasRequestSent ? 'Request: Sent' : 'Request: Pending',
+        completed: hasRequestSent || hasPaymentReceived,
+        active: hasRequestSent && !hasPaymentReceived
       },
       { 
-        label: 'Payment: Pending',
-        completed: request.status === 'paid',
+        label: hasPaymentReceived ? 'Payment: Received' : 'Payment: Pending',
+        completed: hasPaymentReceived,
         active: false
       }
     ];
