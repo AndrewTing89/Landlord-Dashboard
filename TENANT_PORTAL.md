@@ -91,11 +91,15 @@ Password: testpassword123
 
 ### Development
 ```bash
-# Backend
+# Backend (Port 3002)
 cd backend
 npm run dev
 
-# Frontend
+# Tenant Frontend (Port 3003)
+cd tenant-frontend
+npm run dev
+
+# Landlord Frontend (Port 3000)
 cd frontend
 npm run dev
 ```

@@ -20,7 +20,7 @@ const processBills = require('./lambdas/processBills');
 const generateReport = require('./lambdas/generateReport');
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3002;
 
 // Import middleware
 const { errorHandler, notFoundHandler, asyncHandler } = require('./middleware/errorHandler');

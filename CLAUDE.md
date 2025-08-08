@@ -12,11 +12,13 @@ with code in this repository.
 ## Project Overview
 
 This is a Landlord Dashboard system for automated rental property
-financial management. The system consists of: - **Backend**:
-Node.js/Express API with PostgreSQL database - **Frontend**:
-React/TypeScript application with Material-UI - **Integrations**:
-SimpleFIN (bank sync), Gmail API (Venmo tracking), Discord
-(notifications)
+financial management. The system consists of:
+- **Backend**: Node.js/Express API with PostgreSQL database (Port 3002)
+- **Landlord Frontend**: React/TypeScript dashboard with Material-UI (Port 3000)
+- **Tenant Frontend**: React/TypeScript PWA portal (Port 3003)
+- **Integrations**: SimpleFIN (bank sync), Gmail API (Venmo tracking), Discord (notifications)
+
+See [PORTS.md](./PORTS.md) for complete port configuration.
 
 ## Key Commands
 
@@ -41,12 +43,27 @@ npm test
 docker-compose up -d
 ```
 
-### Frontend Development
+### Landlord Frontend Development
 
 ``` bash
 cd frontend
 
-# Start development server
+# Start development server (Port 3000)
+npm run dev
+
+# Build for production
+npm run build
+
+# Run linting
+npm run lint
+```
+
+### Tenant Frontend Development
+
+``` bash
+cd tenant-frontend
+
+# Start development server (Port 3003)
 npm run dev
 
 # Build for production

@@ -355,28 +355,55 @@ generateFingerprint(tx) {
 
 ## 📦 Installation & Setup
 
+### Project Structure
+```
+landlord-dashboard/
+├── backend/          # Node.js/Express API (Port 3002)
+├── frontend/         # React Landlord Dashboard (Port 3000)
+├── tenant-frontend/  # React Tenant Portal (Port 3003)
+├── docker-compose.yml
+├── PORTS.md         # Port configuration guide
+└── CLAUDE.md        # AI assistant instructions
+```
+
+### Quick Start
 ```bash
 # Clone repository
 git clone https://github.com/AndrewTing89/Landlord-Dashboard.git
+cd Landlord-Dashboard
 
 # Install dependencies
 cd backend && npm install
 cd ../frontend && npm install
+cd ../tenant-frontend && npm install
 
 # Configure environment
-cp .env.example .env
+cp backend/.env.example backend/.env
 # Add your API keys
 
 # Start services
 docker-compose up -d  # PostgreSQL + LocalStack
-npm run migrate       # Database setup
-npm run dev          # Start application
+cd backend && npm run migrate  # Database setup
+
+# Start all applications (in separate terminals)
+cd backend && npm run dev       # API on :3002
+cd frontend && npm run dev      # Landlord on :3000
+cd tenant-frontend && npm run dev  # Tenant on :3003
 ```
+
+### Access Points
+- **Landlord Dashboard**: http://localhost:3000
+- **Tenant Portal**: http://localhost:3003
+- **API Documentation**: http://localhost:3002/api-docs
+- **Database**: postgresql://localhost:5432/landlord_dashboard
+
+See [PORTS.md](./PORTS.md) for detailed port configuration.
 
 ## 🎓 Skills Demonstrated
 
 ### Backend Development
 - RESTful API design with Express.js
+- Multi-tenant architecture with JWT authentication
 - Raw SQL optimization for complex queries
 - OAuth 2.0 implementation from scratch
 - Webhook handling and event processing
@@ -384,9 +411,11 @@ npm run dev          # Start application
 
 ### Frontend Development
 - React 18 with TypeScript
+- Progressive Web App (PWA) architecture
 - Material-UI component library
 - State management with hooks
 - Real-time data visualization
+- Service Worker for offline capability
 - Responsive design patterns
 
 ### DevOps & Infrastructure
