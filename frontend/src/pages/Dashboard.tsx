@@ -23,6 +23,12 @@ import {
   IconButton,
   Tabs,
   Tab,
+  Stepper,
+  Step,
+  StepLabel,
+  StepConnector,
+  styled,
+  stepConnectorClasses,
 } from '@mui/material';
 import {
   TrendingUp as TrendingUpIcon,
@@ -32,6 +38,9 @@ import {
   Sync as SyncIcon,
   Payment as PaymentIcon,
   Close as CloseIcon,
+  Send as SendIcon,
+  CheckCircle as CheckCircleIcon,
+  Schedule as ScheduleIcon,
 } from '@mui/icons-material';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid, BarChart, Bar } from 'recharts';
 import { apiService } from '../services/api';
@@ -59,6 +68,29 @@ const COLORS = {
   'Other': '#8884D8',
   'Insurance': '#ffa500',
 };
+
+// Custom styled connector for the status stepper
+const StatusConnector = styled(StepConnector)(({ theme }) => ({
+  [`&.${stepConnectorClasses.alternativeLabel}`]: {
+    top: 10,
+  },
+  [`&.${stepConnectorClasses.active}`]: {
+    [`& .${stepConnectorClasses.line}`]: {
+      backgroundColor: theme.palette.primary.main,
+    },
+  },
+  [`&.${stepConnectorClasses.completed}`]: {
+    [`& .${stepConnectorClasses.line}`]: {
+      backgroundColor: theme.palette.primary.main,
+    },
+  },
+  [`& .${stepConnectorClasses.line}`]: {
+    height: 2,
+    border: 0,
+    backgroundColor: theme.palette.mode === 'dark' ? theme.palette.grey[800] : '#eaeaf0',
+    borderRadius: 1,
+  },
+}));
 
 interface MonthDetailDialogState {
   open: boolean;
@@ -205,6 +237,72 @@ export default function Dashboard() {
 
   const getRevenueExpenseData = () => {
     return monthlyData || [];
+  };
+
+  const getBillTypeChip = (type: string | null) => {
+    if (!type) {
+      return <Chip label="Unknown" color="default" size="small" />;
+    }
+    if (type === 'electricity') {
+      return (
+        <Chip
+          label="Electricity"
+          size="small"
+          sx={{ 
+            backgroundColor: '#D4A017',
+            color: 'white',
+            fontWeight: 500
+          }}
+        />
+      );
+    }
+    if (type === 'rent') {
+      return (
+        <Chip
+          label="Rent"
+          size="small"
+          sx={{ 
+            backgroundColor: '#FF8042',
+            color: 'white',
+            fontWeight: 500
+          }}
+        />
+      );
+    }
+    return <Chip label="Water" color="info" size="small" />;
+  };
+
+  const getPaymentStatus = (request: PaymentRequest) => {
+    const steps = [
+      { 
+        label: 'Record Created',
+        completed: true,
+        active: request.status === 'pending'
+      },
+      { 
+        label: 'Request: Pending',
+        completed: request.status === 'sent' || request.status === 'paid',
+        active: request.status === 'sent'
+      },
+      { 
+        label: 'Payment: Pending',
+        completed: request.status === 'paid',
+        active: false
+      }
+    ];
+    return steps;
+  };
+
+  const handleSendToDiscord = async (request: PaymentRequest) => {
+    try {
+      const response = await apiService.sendPaymentSMS(request.id);
+      if (response.data.success) {
+        // Refresh the list
+        fetchDashboardData();
+      }
+    } catch (err) {
+      console.error('Error sending to Discord:', err);
+    }
   };
 
   const handleMonthClick = async (data: any, index: number) => {
@@ -514,26 +612,101 @@ export default function Dashboard() {
                   Pending Payment Requests
                 </Typography>
                 <Grid container spacing={2}>
-                  {pendingPayments.map((payment) => (
-                    <Grid item xs={12} sm={6} md={4} key={payment.id}>
+                  {pendingPayments.map((request) => (
+                    <Grid item xs={12} sm={6} md={4} key={request.id}>
                       <Card variant="outlined">
                         <CardContent>
-                          <Typography variant="body2" gutterBottom>
-                            {payment.roommate_name}
-                          </Typography>
-                          <Typography variant="h6" color="primary">
-                            {formatCurrency(payment.amount)}
-                          </Typography>
-                          <Typography variant="caption" color="textSecondary">
-                            {payment.bill_type} - {format(new Date(payment.request_date), 'MMM yyyy')}
-                          </Typography>
-                          <Box mt={1}>
+                          {/* Header with name and amount */}
+                          <Box display="flex" justifyContent="space-between" alignItems="start" mb={1}>
+                            <Box>
+                              <Typography variant="body2" color="textSecondary">
+                                {request.roommate_name}
+                              </Typography>
+                              <Typography variant="h5">
+                                {formatCurrency(request.amount)}
+                              </Typography>
+                              <Typography variant="caption" color="textSecondary">
+                                of {formatCurrency(request.total_amount || request.amount)} total
+                              </Typography>
+                            </Box>
+                            <Chip
+                              label="pending"
+                              color="default"
+                              size="small"
+                              icon={<ScheduleIcon />}
+                            />
+                          </Box>
+                          
+                          {/* Bill details */}
+                          <Box mb={1}>
+                            <Typography variant="subtitle2" gutterBottom>
+                              {request.company_name || request.merchant_name || 
+                               (request.bill_type === 'electricity' ? 'PG&E' : 
+                                request.bill_type === 'water' ? 'Great Oaks Water' : 
+                                request.bill_type === 'rent' ? 'Monthly Rent' : request.bill_type)}
+                            </Typography>
+                            <Box display="flex" alignItems="center" gap={1} flexWrap="wrap" mb={1}>
+                              {getBillTypeChip(request.bill_type)}
+                              {request.tracking_id && (
+                                <Chip
+                                  label={request.tracking_id}
+                                  size="small"
+                                  variant="outlined"
+                                  sx={{ fontSize: '0.7rem' }}
+                                />
+                              )}
+                            </Box>
+                            <Typography variant="body2" color="textSecondary">
+                              Bill Date: <strong>{request.charge_date ? format(new Date(request.charge_date), 'MMM dd, yyyy') : 'N/A'}</strong>
+                            </Typography>
+                          </Box>
+                          
+                          {/* Status Stepper */}
+                          <Box sx={{ mb: 2, mt: 1 }}>
+                            <Stepper 
+                              activeStep={getPaymentStatus(request).findIndex(s => s.active)} 
+                              alternativeLabel
+                              connector={<StatusConnector />}
+                              sx={{ 
+                                '& .MuiStepLabel-label': { 
+                                  fontSize: '0.75rem',
+                                  mt: 0.5
+                                },
+                                '& .MuiStepIcon-root': {
+                                  fontSize: '1rem'
+                                }
+                              }}
+                            >
+                              {getPaymentStatus(request).map((step, index) => (
+                                <Step key={index} completed={step.completed}>
+                                  <StepLabel>{step.label}</StepLabel>
+                                </Step>
+                              ))}
+                            </Stepper>
+                          </Box>
+                          
+                          {/* Action buttons */}
+                          <Box display="flex" gap={1} mt={2}>
                             <Button
                               variant="contained"
-                              size="small"
+                              size="medium"
                               fullWidth
-                              href={payment.venmo_link}
-                              target="_blank"
+                              startIcon={<SendIcon />}
+                              onClick={() => handleSendToDiscord(request)}
+                              sx={{ backgroundColor: '#5865F2', '&:hover': { backgroundColor: '#4752C4' } }}
+                            >
+                              Send to Discord
+                            </Button>
+                            <Button
+                              variant="contained"
+                              size="medium"
+                              fullWidth
+                              onClick={() => window.open(request.venmo_link, '_blank')}
+                              sx={{ 
+                                backgroundColor: '#3D95CE', 
+                                '&:hover': { backgroundColor: '#2980b9' },
+                                fontWeight: 'bold'
+                              }}
                             >
                               Open in Venmo
                             </Button>
