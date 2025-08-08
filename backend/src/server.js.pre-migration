@@ -44,7 +44,6 @@ app.use('/api/sync', routes.sync);
 app.use('/api/payment', routes.payments);
 app.use('/api/review', routes.review);
 app.use('/api/gmail', routes.gmail);
-app.use('/api/ledger', require('./routes/ledger'));
 
 // Plaid endpoints
 app.post('/api/plaid/create-link-token', async (req, res) => {
@@ -121,7 +120,7 @@ app.get('/api/transactions', async (req, res) => {
   try {
     const { start_date, end_date, expense_type, expense_types, exclude_types, search, include_other } = req.query;
     
-    let query = 'SELECT * FROM expenses WHERE 1=1';
+    let query = 'SELECT * FROM transactions WHERE 1=1';
     const params = [];
     
     // By default, exclude 'other' transactions unless explicitly requested
@@ -185,8 +184,8 @@ app.get('/api/monthly-comparison', async (req, res) => {
         SELECT 
           EXTRACT(MONTH FROM t.date) as month,
           SUM(t.amount) - COALESCE(SUM(adj.adjustment_amount), 0) as total_expenses
-        FROM expenses t
-        LEFT JOIN utility_adjustments adj ON adj.expense_id = t.id
+        FROM transactions t
+        LEFT JOIN utility_adjustments adj ON adj.transaction_id = t.id
         WHERE EXTRACT(YEAR FROM t.date) = $1
           AND t.expense_type NOT IN ('rent', 'other', 'utility_reimbursement')
         GROUP BY EXTRACT(MONTH FROM t.date)
@@ -208,13 +207,13 @@ app.get('/api/monthly-comparison', async (req, res) => {
           
           UNION ALL
           
-          -- Get utility reimbursements from income table
+          -- Get utility reimbursements from transactions
           SELECT 
             EXTRACT(MONTH FROM date)::integer as month,
             SUM(amount) as total_revenue
-          FROM income
+          FROM transactions
           WHERE EXTRACT(YEAR FROM date) = $1
-            AND income_type = 'utility_reimbursement'
+            AND expense_type = 'utility_reimbursement'
           GROUP BY EXTRACT(MONTH FROM date)
         ) combined_revenue
         GROUP BY month
@@ -240,8 +239,8 @@ app.get('/api/monthly-comparison', async (req, res) => {
         EXTRACT(MONTH FROM t.date) as month,
         t.expense_type,
         SUM(t.amount) - COALESCE(SUM(adj.adjustment_amount), 0) as amount
-      FROM expenses t
-      LEFT JOIN utility_adjustments adj ON adj.expense_id = t.id
+      FROM transactions t
+      LEFT JOIN utility_adjustments adj ON adj.transaction_id = t.id
       WHERE EXTRACT(YEAR FROM t.date) = $1
         AND t.expense_type NOT IN ('rent', 'other', 'utility_reimbursement')
       GROUP BY EXTRACT(MONTH FROM t.date), t.expense_type
@@ -318,8 +317,8 @@ app.get('/api/summary', async (req, res) => {
         SUM(t.amount) as gross_amount,
         COALESCE(SUM(adj.adjustment_amount), 0) as total_adjustments,
         SUM(t.amount) - COALESCE(SUM(adj.adjustment_amount), 0) as total_amount
-       FROM expenses t
-       LEFT JOIN utility_adjustments adj ON adj.expense_id = t.id
+       FROM transactions t
+       LEFT JOIN utility_adjustments adj ON adj.transaction_id = t.id
        ${dateFilter}
        GROUP BY t.expense_type
        ORDER BY total_amount DESC`,
@@ -333,8 +332,8 @@ app.get('/api/summary', async (req, res) => {
       const expensesResult = await db.getOne(
         `SELECT 
           SUM(t.amount) - COALESCE(SUM(adj.adjustment_amount), 0) as total_expenses
-         FROM expenses t
-         LEFT JOIN utility_adjustments adj ON adj.expense_id = t.id
+         FROM transactions t
+         LEFT JOIN utility_adjustments adj ON adj.transaction_id = t.id
          WHERE EXTRACT(YEAR FROM t.date) = 2025
            AND t.expense_type NOT IN ('rent', 'other', 'utility_reimbursement')`
       );
@@ -365,12 +364,12 @@ app.get('/api/summary', async (req, res) => {
       
       const expectedRentIncome = monthsWithRent * 1685;
       
-      // Get utility reimbursements from income table
+      // Get utility reimbursements
       const reimbursementsResult = await db.getOne(
         `SELECT SUM(amount) as reimbursements
-         FROM income
+         FROM transactions
          WHERE EXTRACT(YEAR FROM date) = 2025
-           AND income_type = 'utility_reimbursement'`
+           AND expense_type = 'utility_reimbursement'`
       );
       
       ytdTotals = {
@@ -466,54 +465,52 @@ app.post('/api/payment-requests/:id/mark-paid', async (req, res) => {
         ['paid', id]
       );
       
-      // For utility bills, find the original expense and create adjustment
-      if (paymentRequest.bill_type !== 'rent') {
-        const utilityExpense = await db.getOne(
-          `SELECT id, amount FROM expenses 
-           WHERE expense_type = $1 
-           AND date >= $2::date - INTERVAL '5 days'
-           AND date <= $2::date + INTERVAL '5 days'
-           ORDER BY ABS(amount - (SELECT total_amount FROM utility_bills WHERE id = $3)) ASC
-           LIMIT 1`,
-          [paymentRequest.bill_type, paymentRequest.bill_date || paymentRequest.created_at, paymentRequest.utility_bill_id]
-        );
+      // Find the original utility expense transaction
+      const utilityExpense = await db.getOne(
+        `SELECT id, amount FROM transactions 
+         WHERE expense_type = $1 
+         AND date >= $2::date - INTERVAL '5 days'
+         AND date <= $2::date + INTERVAL '5 days'
+         ORDER BY ABS(amount - (SELECT total_amount FROM utility_bills WHERE id = $3)) ASC
+         LIMIT 1`,
+        [paymentRequest.bill_type, paymentRequest.bill_date || paymentRequest.created_at, paymentRequest.utility_bill_id]
+      );
+      
+      if (utilityExpense) {
+        // Create an adjustment record to track the reimbursement
+        await db.insert('utility_adjustments', {
+          transaction_id: utilityExpense.id,
+          payment_request_id: paymentRequest.id,
+          adjustment_amount: parseFloat(paymentRequest.amount),
+          adjustment_type: 'reimbursement',
+          description: `Roommate payment for ${paymentRequest.bill_type} bill`,
+          applied_date: new Date()
+        });
         
-        if (utilityExpense) {
-          // Create an adjustment record to track the reimbursement
-          await db.insert('utility_adjustments', {
-            expense_id: utilityExpense.id,
-            payment_request_id: paymentRequest.id,
-            adjustment_amount: parseFloat(paymentRequest.amount),
-            adjustment_type: 'reimbursement',
-            description: `Roommate payment for ${paymentRequest.bill_type} bill`,
-            applied_date: new Date()
-          });
-          
-          console.log(`Created adjustment of $${paymentRequest.amount} for expense ${utilityExpense.id}`);
-        } else {
-          console.log('Warning: Could not find matching utility expense');
-        }
+        console.log(`Created adjustment of $${paymentRequest.amount} for transaction ${utilityExpense.id}`);
+      } else {
+        console.log('Warning: Could not find matching utility expense transaction');
       }
       
-      // Create income record for both rent and utility payments
-      const incomeType = paymentRequest.bill_type === 'rent' ? 'rent' : 'utility_reimbursement';
-      const description = paymentRequest.bill_type === 'rent' 
-        ? `Rent Payment - ${paymentRequest.roommate_name}`
-        : `${paymentRequest.roommate_name} - ${paymentRequest.bill_type === 'electricity' ? 'PG&E' : 'Water'} Payment`;
-      
-      await db.insert('income', {
-        date: new Date(),
-        amount: parseFloat(paymentRequest.amount), // Positive for income
-        description: description,
-        income_type: incomeType,
-        category: paymentRequest.bill_type === 'rent' ? null : paymentRequest.bill_type,
-        source_type: 'payment_request',
-        payment_request_id: paymentRequest.id,
-        payer_name: paymentRequest.roommate_name,
-        notes: `Payment request #${paymentRequest.id} marked as paid`
-      });
-      
-      console.log(`Created income record for ${paymentRequest.roommate_name} - ${incomeType}`);
+      // Only create recuperation transaction for utilities, not rent
+      if (paymentRequest.bill_type !== 'rent') {
+        const utilityName = paymentRequest.bill_type === 'electricity' ? 'PG&E' : 'Water';
+        await db.insert('transactions', {
+          plaid_transaction_id: `recuperation_${paymentRequest.id}_${Date.now()}`,
+          plaid_account_id: 'manual_entry',
+          amount: -parseFloat(paymentRequest.amount), // Negative for income
+          date: new Date(),
+          name: `${paymentRequest.roommate_name} - ${utilityName} Payment`,
+          merchant_name: paymentRequest.roommate_name,
+          expense_type: 'utility_reimbursement',
+          category: 'Reimbursement',
+          subcategory: `${paymentRequest.bill_type} payment`
+        });
+        
+        console.log(`Created recuperation transaction for ${paymentRequest.roommate_name}`);
+      } else {
+        console.log('Rent payment marked as paid - no transaction created (income tracked via payment_requests)');
+      }
       
       
       await db.query('COMMIT');
@@ -1063,7 +1060,7 @@ app.post('/api/review/approve/:id', async (req, res) => {
     
     // Check if already exists in main transactions (same date + amount = likely duplicate)
     const existing = await db.getOne(
-      `SELECT id, expense_type, name FROM expenses 
+      `SELECT id, expense_type, name FROM transactions 
        WHERE date = $1 
          AND amount = $2`,
       [rawTx.posted_date, Math.abs(rawTx.amount)]
@@ -1182,7 +1179,7 @@ app.put('/api/transactions/:id/category', async (req, res) => {
     try {
       // Get the current transaction details
       const transaction = await db.getOne(
-        'SELECT * FROM expenses WHERE id = $1',
+        'SELECT * FROM transactions WHERE id = $1',
         [id]
       );
       
@@ -1193,7 +1190,7 @@ app.put('/api/transactions/:id/category', async (req, res) => {
       
       // Update the main transactions table
       await db.query(
-        'UPDATE expenses SET expense_type = $1, updated_at = NOW() WHERE id = $2',
+        'UPDATE transactions SET expense_type = $1, updated_at = NOW() WHERE id = $2',
         [expense_type, id]
       );
       
@@ -1231,7 +1228,7 @@ app.put('/api/transactions/:id/category', async (req, res) => {
         // Check if we have multiple transactions with similar patterns
         const similarTransactions = await db.query(
           `SELECT COUNT(*) as count 
-           FROM expenses 
+           FROM transactions 
            WHERE (LOWER(merchant_name) LIKE LOWER($1) 
                   OR LOWER(name) LIKE LOWER($1))
              AND id != $2`,

@@ -77,7 +77,7 @@ async function fullSync(syncType = 'daily', lookbackDays = 7) {
     
     // Find electricity and water transactions that need payment requests (these are split with roommates)
     const newBills = await db.query(
-      `SELECT t.* FROM expenses t
+      `SELECT t.* FROM transactions t
        WHERE t.expense_type IN ('electricity', 'water')
        AND NOT EXISTS (
          SELECT 1 FROM payment_requests pr 

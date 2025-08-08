@@ -329,7 +329,7 @@ class VenmoMatchingService {
   async createRecuperationTransaction(paymentRequest, emailRecord) {
     // Create a recuperation transaction (negative amount = income)
     const recuperationTx = await db.query(`
-      INSERT INTO income (
+      INSERT INTO transactions (
         plaid_id,
         account_id,
         amount,

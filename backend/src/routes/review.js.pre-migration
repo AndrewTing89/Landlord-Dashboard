@@ -152,7 +152,7 @@ router.post('/bulk-approve', async (req, res) => {
           if (rawTx) {
             // Check if transaction already exists
             const existing = await db.getOne(
-              'SELECT id FROM expenses WHERE plaid_transaction_id = $1',
+              'SELECT id FROM transactions WHERE plaid_transaction_id = $1',
               [`simplefin_${rawTx.simplefin_id}`]
             );
             
