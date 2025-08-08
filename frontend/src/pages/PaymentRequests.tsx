@@ -346,10 +346,36 @@ export default function PaymentRequests() {
         />
       );
     }
+    if (type === 'water') {
+      return (
+        <Chip
+          label="Water"
+          size="small"
+          sx={{ 
+            backgroundColor: '#9C27B0',
+            color: 'white',
+            fontWeight: 500
+          }}
+        />
+      );
+    }
+    if (type === 'rent') {
+      return (
+        <Chip
+          label="Rent"
+          size="small"
+          sx={{ 
+            backgroundColor: '#4CAF50',
+            color: 'white',
+            fontWeight: 500
+          }}
+        />
+      );
+    }
     return (
       <Chip
-        label="Water"
-        color="info"
+        label={type}
+        color="default"
         size="small"
       />
     );

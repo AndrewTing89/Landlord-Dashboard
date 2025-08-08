@@ -45,15 +45,30 @@ import { format } from 'date-fns';
 import { apiService } from '../services/api';
 import { Transaction, ExpenseType } from '../types';
 
-const expenseTypeColors: Record<string, 'success' | 'error' | 'warning' | 'info' | 'default' | 'primary' | 'secondary'> = {
-  rent: 'success',
-  electricity: 'error',
-  water: 'info',
-  internet: 'primary',
-  maintenance: 'warning',
-  landscape: 'secondary',
-  property_tax: 'error',
-  insurance: 'info',
+// Color scheme matching Dashboard and PaymentRequests
+const getExpenseTypeChip = (type: string | null) => {
+  const colorMap: Record<string, string> = {
+    electricity: '#D4A017', // Gold/Yellow
+    water: '#9C27B0', // Purple
+    maintenance: '#FF5722', // Deep Orange
+    landscape: '#E91E63', // Pink-Red
+    internet: '#F44336', // Red
+    property_tax: '#D32F2F', // Dark Red
+    rent: '#4CAF50', // Green
+    insurance: '#FF6F00', // Amber-Orange
+    other: '#8884D8',
+    utility_reimbursement: '#4CAF50', // Green (income)
+  };
+
+  const label = type ? type.split('_').map(word => 
+    word.charAt(0).toUpperCase() + word.slice(1)
+  ).join(' ') : 'Unknown';
+
+  return {
+    label,
+    backgroundColor: colorMap[type || ''] || '#757575',
+    color: 'white'
+  };
 };
 
 interface EditDialogState {
@@ -142,10 +157,6 @@ export default function Transactions() {
     }).format(amount);
   };
 
-  const getExpenseTypeLabel = (type: string | null) => {
-    if (!type) return 'Unknown';
-    return type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
-  };
 
   const handleEditClick = (transaction: Transaction) => {
     setEditDialog({
@@ -427,9 +438,13 @@ export default function Transactions() {
                   <TableCell>{transaction.merchant_name || '-'}</TableCell>
                   <TableCell>
                     <Chip
-                      label={getExpenseTypeLabel(transaction.expense_type)}
-                      color={transaction.expense_type ? (expenseTypeColors[transaction.expense_type] || 'default') : 'default'}
+                      label={getExpenseTypeChip(transaction.expense_type).label}
                       size="small"
+                      sx={{
+                        backgroundColor: getExpenseTypeChip(transaction.expense_type).backgroundColor,
+                        color: getExpenseTypeChip(transaction.expense_type).color,
+                        fontWeight: 500
+                      }}
                     />
                   </TableCell>
                   <TableCell align="right">

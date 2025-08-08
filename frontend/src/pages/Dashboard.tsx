@@ -48,25 +48,25 @@ import { ExpenseSummary, Transaction, PaymentRequest } from '../types';
 import { format } from 'date-fns';
 
 const COLORS = {
-  electricity: '#0088FE',
-  water: '#00C49F',
-  maintenance: '#FFBB28',
-  landscape: '#82ca9d',
-  internet: '#8dd1e1',
-  property_tax: '#d084d0',
-  rent: '#FF8042',
+  electricity: '#D4A017', // Gold/Yellow
+  water: '#9C27B0', // Purple
+  maintenance: '#FF5722', // Deep Orange
+  landscape: '#E91E63', // Pink-Red
+  internet: '#F44336', // Red
+  property_tax: '#D32F2F', // Dark Red
+  rent: '#4CAF50', // Green
   other: '#8884D8',
-  insurance: '#ffa500',
+  insurance: '#FF6F00', // Amber-Orange
   // Map formatted names to colors
-  'Electricity': '#0088FE',
-  'Water': '#00C49F',
-  'Maintenance': '#FFBB28',
-  'Landscape': '#82ca9d',
-  'Internet': '#8dd1e1',
-  'Property Tax': '#d084d0',
-  'Rent': '#FF8042',
+  'Electricity': '#D4A017', // Gold/Yellow
+  'Water': '#9C27B0', // Purple
+  'Maintenance': '#FF5722', // Deep Orange
+  'Landscape': '#E91E63', // Pink-Red
+  'Internet': '#F44336', // Red
+  'Property Tax': '#D32F2F', // Dark Red
+  'Rent': '#4CAF50', // Green
   'Other': '#8884D8',
-  'Insurance': '#ffa500',
+  'Insurance': '#FF6F00', // Amber-Orange
 };
 
 // Custom styled connector for the status stepper
@@ -256,20 +256,33 @@ export default function Dashboard() {
         />
       );
     }
-    if (type === 'rent') {
+    if (type === 'water') {
       return (
         <Chip
-          label="Rent"
+          label="Water"
           size="small"
           sx={{ 
-            backgroundColor: '#FF8042',
+            backgroundColor: '#9C27B0',
             color: 'white',
             fontWeight: 500
           }}
         />
       );
     }
-    return <Chip label="Water" color="info" size="small" />;
+    if (type === 'rent') {
+      return (
+        <Chip
+          label="Rent"
+          size="small"
+          sx={{ 
+            backgroundColor: '#4CAF50',
+            color: 'white',
+            fontWeight: 500
+          }}
+        />
+      );
+    }
+    return <Chip label={type} color="default" size="small" />;
   };
 
   const getPaymentStatus = (request: PaymentRequest) => {
