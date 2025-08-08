@@ -324,7 +324,7 @@ class DiscordService {
         fields: [
           {
             name: '💵 Amount Received',
-            value: `**$${amount.toFixed(2)}**`,
+            value: `**$${parseFloat(amount).toFixed(2)}**`,
             inline: true
           },
           {

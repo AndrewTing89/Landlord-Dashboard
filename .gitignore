@@ -85,3 +85,9 @@ backend/gmail-credentials.json
 
 # Temporary scripts
 backend/scripts/populate-payment-request-totals.js
+
+# Personal/Career documents
+resume.md
+cover_letter.md
+*resume*
+*cover_letter*

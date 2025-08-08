@@ -59,47 +59,47 @@ class VenmoMatchingService {
     console.log(`🔍 Attempting to match payment email: $${emailRecord.venmo_amount} from ${emailRecord.venmo_actor}`);
     
     try {
-      // SPECIAL RULE: Rent detection (Ushi payment >= $1600 from Aug 2025 onwards)
+      // SPECIAL RULE: Rent detection (Ushi payment >= $1600)
       const isUshi = emailRecord.venmo_actor && 
         (emailRecord.venmo_actor.toLowerCase().includes('ushi') || 
          emailRecord.venmo_actor.toLowerCase().includes(process.env.ROOMMATE_NAME?.toLowerCase() || 'ushi'));
       
-      if (isUshi && emailRecord.venmo_amount >= 1600) {
-        const emailDate = new Date(emailRecord.received_date);
+      const rentAmount = parseFloat(process.env.MONTHLY_RENT || 1685);
+      const rentThreshold = rentAmount - 100; // Allow some variance
+      
+      if (isUshi && emailRecord.venmo_amount >= rentThreshold) {
+        console.log(`🏠 Detected potential rent payment: $${emailRecord.venmo_amount} from Ushi`);
         
-        // Only apply this rule from August 2025 onwards
-        if (emailDate >= new Date('2025-08-01')) {
-          console.log(`🏠 Detected rent payment: $${emailRecord.venmo_amount} from Ushi`);
-          
-          // Find the rent payment request for this month
-          const month = emailDate.getMonth() + 1;
-          const year = emailDate.getFullYear();
-          
-          const rentRequest = await db.getOne(`
-            SELECT pr.*, ub.bill_type
-            FROM payment_requests pr
-            LEFT JOIN utility_bills ub ON pr.utility_bill_id = ub.id
-            WHERE pr.status = 'pending'
-              AND EXTRACT(MONTH FROM pr.created_at) = $1
-              AND EXTRACT(YEAR FROM pr.created_at) = $2
-              AND pr.amount >= 1600
-            ORDER BY pr.created_at DESC
-            LIMIT 1
-          `, [month, year]);
-          
-          if (rentRequest) {
-            console.log(`✅ Matched to rent payment request #${rentRequest.id}`);
-            await this.applyMatch(emailRecord, { ...rentRequest, confidence: 1.0 });
-            return { 
-              matched: true, 
-              payment_request_id: rentRequest.id,
-              confidence: 1.0,
-              match_method: 'rent_rule'
-            };
-          } else {
-            console.log(`⚠️ No rent payment request found for ${month}/${year}, storing as rent income`);
-            // Could create a rent transaction here if needed
-          }
+        const emailDate = new Date(emailRecord.received_date);
+        const month = emailDate.getMonth() + 1;
+        const year = emailDate.getFullYear();
+        
+        // Look for rent payment request for this month OR previous month (in case paid early/late)
+        const rentRequest = await db.getOne(`
+          SELECT pr.*
+          FROM payment_requests pr
+          WHERE pr.bill_type = 'rent'
+            AND pr.status IN ('pending', 'sent')
+            AND pr.year = $1
+            AND pr.month IN ($2, $3)
+            AND ABS(pr.amount::numeric - $4) <= 100
+          ORDER BY ABS(pr.month - $2), pr.created_at DESC
+          LIMIT 1
+        `, [year, month, month === 1 ? 12 : month - 1, emailRecord.venmo_amount]);
+        
+        if (rentRequest) {
+          console.log(`✅ Matched to rent payment request #${rentRequest.id} for ${rentRequest.month}/${rentRequest.year}`);
+          await this.applyMatch(emailRecord, { ...rentRequest, confidence: 1.0, bill_type: 'rent' });
+          return { 
+            matched: true, 
+            payment_request_id: rentRequest.id,
+            confidence: 1.0,
+            match_method: 'rent_rule'
+          };
+        } else {
+          console.log(`⚠️ No rent payment request found for ${month}/${year}`);
+          console.log(`   Consider creating a rent payment request first`);
+          // Don't auto-create transaction - let the user handle this
         }
       }
       // First, try to match by tracking ID if available
@@ -256,7 +256,8 @@ class VenmoMatchingService {
    * Apply a confirmed match between email and payment request
    */
   async applyMatch(emailRecord, paymentRequest) {
-    const client = await db.pool.connect();
+    // Use the db connection directly instead of pool
+    const client = db;
     
     try {
       await client.query('BEGIN');
@@ -295,8 +296,11 @@ class VenmoMatchingService {
         `, [emailRecord.received_date, paymentRequest.venmo_request_id]);
       }
       
-      // 4. Create utility adjustment (recuperation) transaction
-      await this.createRecuperationTransaction(client, paymentRequest, emailRecord);
+      // 4. Create utility adjustment (recuperation) transaction  
+      // For rent, we don't create recuperation transactions since it's not a utility split
+      if (paymentRequest.bill_type !== 'rent') {
+        await this.createRecuperationTransaction(paymentRequest, emailRecord);
+      }
       
       // 5. Send Discord notification
       const discordService = require('./discordService');
@@ -316,17 +320,15 @@ class VenmoMatchingService {
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
-    } finally {
-      client.release();
     }
   }
 
   /**
    * Create recuperation transaction for roommate payment
    */
-  async createRecuperationTransaction(client, paymentRequest, emailRecord) {
+  async createRecuperationTransaction(paymentRequest, emailRecord) {
     // Create a recuperation transaction (negative amount = income)
-    const recuperationTx = await client.query(`
+    const recuperationTx = await db.query(`
       INSERT INTO transactions (
         plaid_id,
         account_id,
@@ -353,7 +355,7 @@ class VenmoMatchingService {
     ]);
     
     // Create utility adjustment record
-    await client.query(`
+    await db.query(`
       INSERT INTO utility_adjustments (
         transaction_id,
         payment_request_id,

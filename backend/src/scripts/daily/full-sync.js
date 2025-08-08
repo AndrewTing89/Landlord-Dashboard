@@ -161,45 +161,49 @@ async function fullSync(syncType = 'daily', lookbackDays = 7) {
       }
     }
     
-    // 4. Check and add rent income for 2025
-    console.log('\n4️⃣  Checking rent income...');
+    // 4. Check and create rent payment requests
+    console.log('\n4️⃣  Checking rent payment requests...');
     try {
-      const { addRentForMonth } = require('../add-rent-income-2025');
+      const { createRentPaymentRequest } = require('../../../scripts/create-rent-payment-request');
       const currentDate = new Date();
       const currentYear = currentDate.getFullYear();
       const currentMonth = currentDate.getMonth() + 1;
-      let rentAdded = 0;
+      let rentCreated = 0;
       
-      // Only process rent for 2025
-      if (currentYear === 2025) {
-        // Add rent for current month if we're on or after the 1st
+      // Only process rent for 2025 onwards
+      if (currentYear >= 2025) {
+        // Create rent request for current month if we're on or after the 1st
         if (currentDate.getDate() >= 1) {
-          const rentResult = await addRentForMonth(2025, currentMonth);
+          const rentResult = await createRentPaymentRequest(currentYear, currentMonth);
           if (rentResult.success) {
             console.log(`   ✅ ${rentResult.message}`);
-            rentAdded++;
+            rentCreated++;
+            results.paymentRequests.push(rentResult.request);
           }
         }
         
-        // Also check previous months in case any were missed
-        for (let month = 1; month < currentMonth; month++) {
-          const rentResult = await addRentForMonth(2025, month);
-          if (rentResult.success) {
-            console.log(`   ✅ ${rentResult.message} (catch-up)`);
-            rentAdded++;
+        // Also check previous months in 2025 in case any were missed
+        if (currentYear === 2025) {
+          for (let month = 1; month < currentMonth; month++) {
+            const rentResult = await createRentPaymentRequest(2025, month);
+            if (rentResult.success) {
+              console.log(`   ✅ ${rentResult.message} (catch-up)`);
+              rentCreated++;
+              results.paymentRequests.push(rentResult.request);
+            }
           }
         }
       }
       
-      if (rentAdded === 0) {
-        console.log('   ℹ️  No new rent income to add');
+      if (rentCreated === 0) {
+        console.log('   ℹ️  No new rent payment requests needed');
       } else {
-        console.log(`   💰 Added ${rentAdded} rent payment(s)`);
+        console.log(`   📝 Created ${rentCreated} rent payment request(s)`);
       }
     } catch (rentError) {
-      console.error('   ❌ Error checking rent income:', rentError.message);
+      console.error('   ❌ Error checking rent payment requests:', rentError.message);
       // Don't fail the sync for rent errors
-      results.errors.push(`Rent income check: ${rentError.message}`);
+      results.errors.push(`Rent payment request: ${rentError.message}`);
     }
     
     // 5. Summary
