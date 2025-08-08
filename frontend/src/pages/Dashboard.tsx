@@ -291,17 +291,54 @@ export default function Dashboard() {
         </Button>
       </Box>
 
-      {/* Summary Cards */}
+      {/* Summary Cards - Now with 6 cards */}
       <Grid container spacing={3} mb={3}>
-        <Grid item xs={12} sm={6} md={3}>
+        {/* Row 1 */}
+        <Grid item xs={12} sm={6} md={4} lg={2}>
           <Card>
             <CardContent>
               <Box display="flex" alignItems="center" justifyContent="space-between">
                 <Box>
-                  <Typography color="textSecondary" gutterBottom>
-                    Total Revenue (YTD)
+                  <Typography color="textSecondary" gutterBottom variant="body2">
+                    Expected Rent
                   </Typography>
-                  <Typography variant="h5">
+                  <Typography variant="h6">
+                    {ytdTotals ? formatCurrency(ytdTotals.expectedRentIncome) : '$0'}
+                  </Typography>
+                </Box>
+                <AttachMoneyIcon color="primary" fontSize="large" />
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid item xs={12} sm={6} md={4} lg={2}>
+          <Card>
+            <CardContent>
+              <Box display="flex" alignItems="center" justifyContent="space-between">
+                <Box>
+                  <Typography color="textSecondary" gutterBottom variant="body2">
+                    Utility Reimb.
+                  </Typography>
+                  <Typography variant="h6">
+                    {ytdTotals ? formatCurrency(ytdTotals.utilityReimbursements) : '$0'}
+                  </Typography>
+                </Box>
+                <AttachMoneyIcon color="info" fontSize="large" />
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid item xs={12} sm={6} md={4} lg={2}>
+          <Card>
+            <CardContent>
+              <Box display="flex" alignItems="center" justifyContent="space-between">
+                <Box>
+                  <Typography color="textSecondary" gutterBottom variant="body2">
+                    Total Revenue
+                  </Typography>
+                  <Typography variant="h6" color="success.main">
                     {formatCurrency(totalRevenue)}
                   </Typography>
                 </Box>
@@ -311,15 +348,15 @@ export default function Dashboard() {
           </Card>
         </Grid>
 
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={12} sm={6} md={4} lg={2}>
           <Card>
             <CardContent>
               <Box display="flex" alignItems="center" justifyContent="space-between">
                 <Box>
-                  <Typography color="textSecondary" gutterBottom>
-                    Total Expenses (YTD)
+                  <Typography color="textSecondary" gutterBottom variant="body2">
+                    Total Expenses
                   </Typography>
-                  <Typography variant="h5">
+                  <Typography variant="h6" color="error.main">
                     {formatCurrency(totalExpenses)}
                   </Typography>
                 </Box>
@@ -329,15 +366,15 @@ export default function Dashboard() {
           </Card>
         </Grid>
 
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={12} sm={6} md={4} lg={2}>
           <Card>
             <CardContent>
               <Box display="flex" alignItems="center" justifyContent="space-between">
                 <Box>
-                  <Typography color="textSecondary" gutterBottom>
-                    Net Income (YTD)
+                  <Typography color="textSecondary" gutterBottom variant="body2">
+                    Net Income
                   </Typography>
-                  <Typography variant="h5" color={netIncome >= 0 ? 'success.main' : 'error.main'}>
+                  <Typography variant="h6" color={netIncome >= 0 ? 'success.main' : 'error.main'}>
                     {formatCurrency(netIncome)}
                   </Typography>
                 </Box>
@@ -351,15 +388,15 @@ export default function Dashboard() {
           </Card>
         </Grid>
 
-        <Grid item xs={12} sm={6} md={3}>
+        <Grid item xs={12} sm={6} md={4} lg={2}>
           <Card>
             <CardContent>
               <Box display="flex" alignItems="center" justifyContent="space-between">
                 <Box>
-                  <Typography color="textSecondary" gutterBottom>
-                    Pending Payments
+                  <Typography color="textSecondary" gutterBottom variant="body2">
+                    Pending
                   </Typography>
-                  <Typography variant="h5">
+                  <Typography variant="h6">
                     {pendingPayments.length}
                   </Typography>
                 </Box>
@@ -370,65 +407,6 @@ export default function Dashboard() {
         </Grid>
       </Grid>
 
-      {/* YTD Totals Section - Only show for 2025 */}
-      {ytdTotals && new Date().getFullYear() === 2025 && (
-        <Card sx={{ mb: 3, backgroundColor: '#f5f5f5' }}>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              2025 Year-to-Date Summary
-            </Typography>
-            <Grid container spacing={2}>
-              <Grid item xs={12} sm={6} md={3}>
-                <Box>
-                  <Typography color="textSecondary" variant="body2">
-                    Expected Rent Income
-                  </Typography>
-                  <Typography variant="h6">
-                    {formatCurrency(ytdTotals.expectedRentIncome)}
-                  </Typography>
-                  <Typography variant="caption" color="textSecondary">
-                    ${1685}/month × {Math.floor(ytdTotals.expectedRentIncome / 1685)} months
-                  </Typography>
-                </Box>
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <Box>
-                  <Typography color="textSecondary" variant="body2">
-                    Total Expenses
-                  </Typography>
-                  <Typography variant="h6" color="error">
-                    {formatCurrency(ytdTotals.totalExpenses)}
-                  </Typography>
-                </Box>
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <Box>
-                  <Typography color="textSecondary" variant="body2">
-                    Utility Reimbursements
-                  </Typography>
-                  <Typography variant="h6" color="success">
-                    {formatCurrency(ytdTotals.utilityReimbursements)}
-                  </Typography>
-                </Box>
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <Box>
-                  <Typography color="textSecondary" variant="body2">
-                    Net Income YTD
-                  </Typography>
-                  <Typography 
-                    variant="h6" 
-                    color={ytdTotals.netIncome >= 0 ? 'success' : 'error'}
-                    fontWeight="bold"
-                  >
-                    {formatCurrency(ytdTotals.netIncome)}
-                  </Typography>
-                </Box>
-              </Grid>
-            </Grid>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Charts and Recent Activity */}
       <Grid container spacing={3}>
