@@ -172,12 +172,13 @@ app.get('/api/transactions', async (req, res) => {
   }
 });
 
-// Get monthly revenue/expense comparison
+// Get monthly revenue/expense comparison with breakdown
 app.get('/api/monthly-comparison', async (req, res) => {
   try {
     const { year } = req.query;
     const currentYear = year || new Date().getFullYear();
     
+    // First get the summary data as before
     const result = await db.query(`
       WITH monthly_expenses AS (
         SELECT 
@@ -232,13 +233,50 @@ app.get('/api/monthly-comparison', async (req, res) => {
       ORDER BY am.month
     `, [currentYear]);
     
+    // Now get expense breakdown by type for each month
+    const expenseBreakdown = await db.query(`
+      SELECT 
+        EXTRACT(MONTH FROM t.date) as month,
+        t.expense_type,
+        SUM(t.amount) - COALESCE(SUM(adj.adjustment_amount), 0) as amount
+      FROM transactions t
+      LEFT JOIN utility_adjustments adj ON adj.transaction_id = t.id
+      WHERE EXTRACT(YEAR FROM t.date) = $1
+        AND t.expense_type NOT IN ('rent', 'other', 'utility_reimbursement')
+      GROUP BY EXTRACT(MONTH FROM t.date), t.expense_type
+      ORDER BY month, t.expense_type
+    `, [currentYear]);
+    
+    // Create a map of expense breakdown by month
+    const breakdownMap = {};
+    expenseBreakdown.rows.forEach(row => {
+      const monthNum = parseInt(row.month);
+      if (!breakdownMap[monthNum]) {
+        breakdownMap[monthNum] = {};
+      }
+      breakdownMap[monthNum][row.expense_type] = parseFloat(row.amount);
+    });
+    
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const formattedData = result.rows.map(row => ({
-      month: monthNames[row.month - 1],
-      revenue: parseFloat(row.revenue),
-      expenses: parseFloat(row.expenses),
-      netIncome: parseFloat(row.net_income)
-    }));
+    const formattedData = result.rows.map(row => {
+      const monthNum = parseInt(row.month);
+      const breakdown = breakdownMap[monthNum] || {};
+      
+      return {
+        month: monthNames[row.month - 1],
+        revenue: parseFloat(row.revenue),
+        expenses: parseFloat(row.expenses),
+        netIncome: parseFloat(row.net_income),
+        // Add individual expense types
+        electricity: breakdown.electricity || 0,
+        water: breakdown.water || 0,
+        maintenance: breakdown.maintenance || 0,
+        landscape: breakdown.landscape || 0,
+        internet: breakdown.internet || 0,
+        property_tax: breakdown.property_tax || 0,
+        insurance: breakdown.insurance || 0
+      };
+    });
     
     res.json(formattedData);
   } catch (error) {

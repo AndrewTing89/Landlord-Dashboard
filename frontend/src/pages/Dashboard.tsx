@@ -751,17 +751,61 @@ export default function Dashboard() {
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="month" />
                   <YAxis />
-                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                  <Tooltip 
+                    formatter={(value: number) => formatCurrency(value)}
+                    contentStyle={{ backgroundColor: '#f5f5f5' }}
+                  />
                   <Legend />
+                  
+                  {/* Revenue Bar - single bar */}
                   <Bar 
                     dataKey="revenue" 
-                    fill="#4caf50"
+                    fill="#4CAF50"
                     name="Revenue"
                   />
+                  
+                  {/* Expense Bars - stacked */}
                   <Bar 
-                    dataKey="expenses" 
-                    fill="#f44336"
-                    name="Expenses"
+                    dataKey="electricity" 
+                    stackId="expenses"
+                    fill={COLORS.electricity}
+                    name="Electricity"
+                  />
+                  <Bar 
+                    dataKey="water" 
+                    stackId="expenses"
+                    fill={COLORS.water}
+                    name="Water"
+                  />
+                  <Bar 
+                    dataKey="internet" 
+                    stackId="expenses"
+                    fill={COLORS.internet}
+                    name="Internet"
+                  />
+                  <Bar 
+                    dataKey="maintenance" 
+                    stackId="expenses"
+                    fill={COLORS.maintenance}
+                    name="Maintenance"
+                  />
+                  <Bar 
+                    dataKey="landscape" 
+                    stackId="expenses"
+                    fill={COLORS.landscape}
+                    name="Landscape"
+                  />
+                  <Bar 
+                    dataKey="property_tax" 
+                    stackId="expenses"
+                    fill={COLORS.property_tax}
+                    name="Property Tax"
+                  />
+                  <Bar 
+                    dataKey="insurance" 
+                    stackId="expenses"
+                    fill={COLORS.insurance}
+                    name="Insurance"
                   />
                 </BarChart>
               </ResponsiveContainer>
