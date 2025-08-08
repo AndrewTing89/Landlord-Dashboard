@@ -63,6 +63,12 @@ app.use('/api/ledger', require('./routes/ledger'));
 app.use('/api/health', require('./routes/health'));
 app.use('/api/dashboard-sync', require('./routes/dashboard-sync'));
 
+// Tenant Portal routes
+app.use('/api/tenant/auth', require('./routes/tenantAuth'));
+app.use('/api/tenant/dashboard', require('./routes/tenantDashboard'));
+app.use('/api/tenant/payments', require('./routes/tenantPayments'));
+app.use('/api/tenant/maintenance', require('./routes/tenantMaintenance'));
+
 // Backup routes
 app.post('/api/backup/create', async (req, res) => {
   try {
