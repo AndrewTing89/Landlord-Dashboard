@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Box } from '@mui/material';
+import { lazy, Suspense } from 'react';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import Ledger from './pages/Ledger';
@@ -14,10 +15,21 @@ import PaymentTrackingSimpleCards from './pages/PaymentTrackingSimpleCards';
 import EmailSyncManagement from './pages/EmailSyncManagement';
 import HealthCheck from './pages/HealthCheck';
 
+// Lazy load tenant portal
+const TenantApp = lazy(() => import('./tenant/App'));
+
 function App() {
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
       <Routes>
+        {/* Tenant Portal Routes */}
+        <Route path="/tenant/*" element={
+          <Suspense fallback={<div>Loading Tenant Portal...</div>}>
+            <TenantApp />
+          </Suspense>
+        } />
+        
+        {/* Landlord Dashboard Routes */}
         <Route path="/" element={<Layout />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />

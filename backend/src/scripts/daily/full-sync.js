@@ -155,6 +155,20 @@ async function fullSync(syncType = 'daily', lookbackDays = 7) {
         });
         
         console.log(`   ✅ Discord notification sent for ${bill.expense_type} bill`);
+        
+        // Also send tenant-specific notification with @andrewhting Venmo link
+        const TenantNotificationService = require('../notify-tenants-new-bills');
+        const tenantNotifier = new TenantNotificationService();
+        await tenantNotifier.notifyNewBill({
+          bill_type: bill.expense_type,
+          total_amount: totalAmount.toFixed(2),
+          amount: splitAmount,
+          merchant_name: bill.merchant_name || bill.name,
+          month: billMonth,
+          year: billYear,
+          tracking_id: trackingId
+        });
+        console.log(`   ✅ Tenant Discord notification sent`);
       } catch (error) {
         console.error(`   ❌ Failed to send Discord notification:`, error.message);
         results.errors.push(`Discord notification: ${error.message}`);
