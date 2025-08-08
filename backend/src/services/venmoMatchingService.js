@@ -4,6 +4,17 @@ const { extractTrackingId } = require('../utils/trackingId');
 
 class VenmoMatchingService {
   /**
+   * Get month name from month number
+   */
+  getMonthName(monthNumber) {
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+    return months[monthNumber - 1];
+  }
+
+  /**
    * Calculate similarity between two strings (Levenshtein distance)
    */
   calculateStringSimilarity(str1, str2) {
@@ -296,9 +307,38 @@ class VenmoMatchingService {
         `, [emailRecord.received_date, paymentRequest.venmo_request_id]);
       }
       
-      // 4. Create utility adjustment (recuperation) transaction  
-      // For rent, we don't create recuperation transactions since it's not a utility split
-      if (paymentRequest.bill_type !== 'rent') {
+      // 4. Create income record for the payment
+      if (paymentRequest.bill_type === 'rent') {
+        // Create rent income record
+        const incomeDate = new Date(paymentRequest.year, paymentRequest.month - 1, 1);
+        await client.query(`
+          INSERT INTO income (
+            date,
+            amount,
+            description,
+            income_type,
+            category,
+            source_type,
+            payment_request_id,
+            payer_name,
+            notes,
+            created_at,
+            updated_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+        `, [
+          incomeDate,
+          parseFloat(paymentRequest.amount),
+          `Rent Payment - ${paymentRequest.roommate_name} - ${this.getMonthName(paymentRequest.month)} ${paymentRequest.year}`,
+          'rent',
+          'rent',
+          'payment_request',
+          paymentRequest.id,
+          paymentRequest.roommate_name,
+          `Auto-matched from Venmo email on ${new Date().toISOString().split('T')[0]}`
+        ]);
+        console.log(`✅ Created rent income record for ${paymentRequest.roommate_name}`);
+      } else {
+        // For utilities, create recuperation transaction
         await this.createRecuperationTransaction(paymentRequest, emailRecord);
       }
       

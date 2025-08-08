@@ -15,7 +15,6 @@ import {
 } from '@mui/material';
 import {
   Dashboard as DashboardIcon,
-  Payment as PaymentIcon,
   Build as BuildIcon,
   Logout as LogoutIcon,
 } from '@mui/icons-material';
@@ -75,11 +74,6 @@ export default function Layout() {
               icon={<DashboardIcon />}
             />
             <BottomNavigationAction
-              label="Payments"
-              value="payments"
-              icon={<PaymentIcon />}
-            />
-            <BottomNavigationAction
               label="Maintenance"
               value="maintenance"
               icon={<BuildIcon />}
@@ -105,7 +99,6 @@ export default function Layout() {
           <Box sx={{ p: 2 }}>
             {[
               { label: 'Dashboard', value: 'dashboard', icon: <DashboardIcon /> },
-              { label: 'Payments', value: 'payments', icon: <PaymentIcon /> },
               { label: 'Maintenance', value: 'maintenance', icon: <BuildIcon /> },
             ].map((item) => (
               <Box

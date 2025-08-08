@@ -749,9 +749,29 @@ app.get('/api/payment-confirmations', async (req, res) => {
 
 app.post('/api/check-payment-emails', async (req, res) => {
   try {
-    console.log('Manually checking for payment emails...');
-    await emailMonitor.checkForVenmoEmails();
-    res.json({ success: true, message: 'Email check completed' });
+    console.log('Manually checking for payment emails via Gmail API...');
+    
+    // Use Gmail API service instead of old IMAP monitor
+    const gmailService = require('./services/gmailService');
+    
+    // Check if Gmail is connected
+    const isConnected = await gmailService.isConnected();
+    if (!isConnected) {
+      return res.status(400).json({ 
+        error: 'Gmail not connected. Please connect Gmail first in Email Sync settings.' 
+      });
+    }
+    
+    // Process Venmo emails from the last 30 days
+    const result = await gmailService.processVenmoEmails(30);
+    
+    console.log(`Gmail sync completed: ${result.processed} emails processed, ${result.matched} matched to payments`);
+    
+    res.json({ 
+      success: true, 
+      message: 'Email check completed',
+      data: result
+    });
   } catch (error) {
     console.error('Email check error:', error);
     res.status(500).json({ error: error.message });

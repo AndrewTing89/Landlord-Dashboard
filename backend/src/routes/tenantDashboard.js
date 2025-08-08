@@ -25,7 +25,7 @@ router.get('/', async (req, res) => {
         COUNT(CASE WHEN status IN ('pending', 'sent') THEN 1 END) as pending_payments,
         COUNT(CASE WHEN status = 'paid' AND EXTRACT(MONTH FROM charge_date) = $2 THEN 1 END) as paid_this_month
       FROM payment_requests
-      WHERE tenant_id = $1 OR roommate_name = $3
+      WHERE tenant_id = $1 OR (tenant_id IS NULL AND roommate_name = $3)
     `, [tenantId, currentMonth, req.tenant.fullName]);
 
     // Get recent payments
@@ -40,7 +40,7 @@ router.get('/', async (req, res) => {
         pr.year,
         pr.tracking_id
       FROM payment_requests pr
-      WHERE (pr.tenant_id = $1 OR pr.roommate_name = $2)
+      WHERE (pr.tenant_id = $1 OR (pr.tenant_id IS NULL AND pr.roommate_name = $2))
         AND pr.status = 'paid'
       ORDER BY pr.updated_at DESC
       LIMIT 5
@@ -92,7 +92,7 @@ router.get('/', async (req, res) => {
         pr.charge_date as due_date,
         pr.tracking_id
       FROM payment_requests pr
-      WHERE (pr.tenant_id = $1 OR pr.roommate_name = $2)
+      WHERE (pr.tenant_id = $1 OR (pr.tenant_id IS NULL AND pr.roommate_name = $2))
         AND pr.status IN ('pending', 'sent')
       ORDER BY pr.charge_date ASC
       LIMIT 1
@@ -252,7 +252,7 @@ router.get('/stats', async (req, res) => {
         END), 0) as avg_payment_days,
         COUNT(CASE WHEN status = 'paid' AND EXTRACT(YEAR FROM charge_date) = $2 THEN 1 END) as payments_this_year
       FROM payment_requests
-      WHERE tenant_id = $1 OR roommate_name = $3
+      WHERE tenant_id = $1 OR (tenant_id IS NULL AND roommate_name = $3)
     `, [tenantId, currentYear, req.tenant.fullName]);
 
     // Get maintenance statistics

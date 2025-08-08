@@ -222,7 +222,7 @@ export default function Dashboard() {
                         fontWeight: 'bold',
                       }}
                     >
-                      Pay ${parseFloat(payment.amount).toFixed(2)} on Venmo
+                      Pay ${parseFloat(payment.amount).toFixed(2)} with Venmo
                     </Button>
 
                     {/* Tracking ID */}

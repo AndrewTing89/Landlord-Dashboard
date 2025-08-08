@@ -37,7 +37,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       api.setAuthToken(savedToken);
     }
 
-    // Set up token refresh interval (every 10 minutes)
+    setLoading(false);
+  }, []);
+
+  // Set up token refresh interval after component mounts
+  useEffect(() => {
+    const savedRefreshToken = localStorage.getItem('tenantRefreshToken');
     if (savedRefreshToken) {
       const interval = setInterval(() => {
         refreshToken();
@@ -45,8 +50,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       return () => clearInterval(interval);
     }
-
-    setLoading(false);
   }, []);
 
   const login = async (email: string, password: string) => {
@@ -88,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     api.setAuthToken(null);
     
     // Redirect to login
-    window.location.href = '/tenant/login';
+    window.location.href = '/login';
   };
 
   const refreshToken = async () => {

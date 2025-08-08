@@ -207,12 +207,21 @@ export default function PaymentRequests() {
       setCheckingEmails(true);
       const response = await apiService.checkPaymentEmails();
       if (response.data.success) {
+        const result = response.data.data;
+        // Show success message with results
+        const message = `Email sync completed!\nProcessed: ${result.processed} emails\nMatched: ${result.matched} payments`;
+        alert(message);
         // Refresh payment requests to show any updates
         await fetchAllData();
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error checking emails:', err);
-      setError('Failed to check payment emails');
+      const errorMessage = err.response?.data?.error || 'Failed to check payment emails';
+      setError(errorMessage);
+      // Also show alert for Gmail connection issues
+      if (errorMessage.includes('Gmail not connected')) {
+        alert('Gmail is not connected. Please go to Email Sync page to connect your Gmail account first.');
+      }
     } finally {
       setCheckingEmails(false);
     }

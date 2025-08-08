@@ -5,7 +5,6 @@ import { AuthProvider } from './contexts/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
-import Payments from './pages/Payments';
 import Maintenance from './pages/Maintenance';
 import Layout from './components/Layout';
 
@@ -67,14 +66,13 @@ function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <AuthProvider>
-        <Router basename="/tenant">
+        <Router>
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route element={<ProtectedRoute />}>
               <Route element={<Layout />}>
                 <Route path="/" element={<Navigate to="/dashboard" replace />} />
                 <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/payments" element={<Payments />} />
                 <Route path="/maintenance" element={<Maintenance />} />
               </Route>
             </Route>

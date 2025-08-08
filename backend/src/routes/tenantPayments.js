@@ -36,15 +36,24 @@ router.get('/', async (req, res) => {
           ELSE false
         END as is_overdue
       FROM payment_requests pr
-      WHERE (pr.tenant_id = $1 OR pr.roommate_name = $2)
+      WHERE (pr.tenant_id = $1 OR (pr.tenant_id IS NULL AND pr.roommate_name = $2))
     `;
     
     const params = [tenantId, req.tenant.fullName];
     let paramIndex = 3;
 
     if (status) {
-      query += ` AND pr.status = $${paramIndex++}`;
-      params.push(status);
+      if (status.includes(',')) {
+        // Handle multiple statuses (e.g., 'pending,sent')
+        const statuses = status.split(',').map(s => s.trim());
+        const statusPlaceholders = statuses.map(() => `$${paramIndex++}`).join(',');
+        query += ` AND pr.status IN (${statusPlaceholders})`;
+        params.push(...statuses);
+      } else {
+        // Handle single status
+        query += ` AND pr.status = $${paramIndex++}`;
+        params.push(status);
+      }
     }
 
     if (year) {
@@ -67,15 +76,24 @@ router.get('/', async (req, res) => {
     let countQuery = `
       SELECT COUNT(*) as total
       FROM payment_requests pr
-      WHERE (pr.tenant_id = $1 OR pr.roommate_name = $2)
+      WHERE (pr.tenant_id = $1 OR (pr.tenant_id IS NULL AND pr.roommate_name = $2))
     `;
     
     const countParams = [tenantId, req.tenant.fullName];
     let countParamIndex = 3;
 
     if (status) {
-      countQuery += ` AND pr.status = $${countParamIndex++}`;
-      countParams.push(status);
+      if (status.includes(',')) {
+        // Handle multiple statuses (e.g., 'pending,sent')
+        const statuses = status.split(',').map(s => s.trim());
+        const statusPlaceholders = statuses.map(() => `$${countParamIndex++}`).join(',');
+        countQuery += ` AND pr.status IN (${statusPlaceholders})`;
+        countParams.push(...statuses);
+      } else {
+        // Handle single status
+        countQuery += ` AND pr.status = $${countParamIndex++}`;
+        countParams.push(status);
+      }
     }
 
     if (year) {
@@ -139,7 +157,7 @@ router.get('/pending', async (req, res) => {
         END as is_overdue,
         (pr.charge_date - CURRENT_DATE)::integer as days_until_due
       FROM payment_requests pr
-      WHERE (pr.tenant_id = $1 OR pr.roommate_name = $2)
+      WHERE (pr.tenant_id = $1 OR (pr.tenant_id IS NULL AND pr.roommate_name = $2))
         AND pr.status IN ('pending', 'sent')
       ORDER BY pr.charge_date ASC
     `, [tenantId, req.tenant.fullName]);
@@ -187,7 +205,7 @@ router.get('/:id', async (req, res) => {
       FROM payment_requests pr
       LEFT JOIN utility_bills ub ON pr.utility_bill_id = ub.id
       WHERE pr.id = $1
-        AND (pr.tenant_id = $2 OR pr.roommate_name = $3)
+        AND (pr.tenant_id = $2 OR (pr.tenant_id IS NULL AND pr.roommate_name = $3))
     `, [id, tenantId, req.tenant.fullName]);
 
     if (!payment) {
@@ -240,7 +258,7 @@ router.post('/:id/acknowledge', async (req, res) => {
       SELECT id 
       FROM payment_requests 
       WHERE id = $1 
-        AND (tenant_id = $2 OR roommate_name = $3)
+        AND (tenant_id = $2 OR (tenant_id IS NULL AND roommate_name = $3))
     `, [id, tenantId, req.tenant.fullName]);
 
     if (!payment) {
@@ -293,7 +311,7 @@ router.get('/:id/receipt', async (req, res) => {
       JOIN tenants t ON (t.id = $2 OR CONCAT(t.first_name, ' ', t.last_name) = pr.roommate_name)
       WHERE pr.id = $1
         AND pr.status = 'paid'
-        AND (pr.tenant_id = $2 OR pr.roommate_name = $3)
+        AND (pr.tenant_id = $2 OR (pr.tenant_id IS NULL AND pr.roommate_name = $3))
     `, [id, tenantId, req.tenant.fullName]);
 
     if (!payment) {
@@ -350,7 +368,7 @@ router.get('/summary/monthly', async (req, res) => {
         COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_count,
         COUNT(CASE WHEN status IN ('pending', 'sent') THEN 1 END) as pending_count
       FROM payment_requests
-      WHERE (tenant_id = $1 OR roommate_name = $2)
+      WHERE (tenant_id = $1 OR (tenant_id IS NULL AND roommate_name = $2))
         AND year = $3
       GROUP BY year, month
       ORDER BY month
