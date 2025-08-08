@@ -191,12 +191,31 @@ app.get('/api/monthly-comparison', async (req, res) => {
       ),
       monthly_revenue AS (
         SELECT 
-          EXTRACT(MONTH FROM date) as month,
-          SUM(amount) as total_revenue
-        FROM transactions
-        WHERE EXTRACT(YEAR FROM date) = $1
-          AND expense_type IN ('rent', 'utility_reimbursement')
-        GROUP BY EXTRACT(MONTH FROM date)
+          month,
+          SUM(total_revenue) as total_revenue
+        FROM (
+          -- Get rent from payment requests
+          SELECT 
+            month::integer as month,
+            SUM(amount::numeric) as total_revenue
+          FROM payment_requests
+          WHERE year = $1
+            AND bill_type = 'rent'
+            AND status = 'paid'
+          GROUP BY month
+          
+          UNION ALL
+          
+          -- Get utility reimbursements from transactions
+          SELECT 
+            EXTRACT(MONTH FROM date)::integer as month,
+            SUM(amount) as total_revenue
+          FROM transactions
+          WHERE EXTRACT(YEAR FROM date) = $1
+            AND expense_type = 'utility_reimbursement'
+          GROUP BY EXTRACT(MONTH FROM date)
+        ) combined_revenue
+        GROUP BY month
       ),
       all_months AS (
         SELECT generate_series(1, 12) as month
@@ -281,12 +300,13 @@ app.get('/api/summary', async (req, res) => {
            AND t.expense_type NOT IN ('rent', 'other', 'utility_reimbursement')`
       );
       
-      // Get actual rent income from transactions
+      // Get actual rent income from paid payment requests
       const rentIncomeResult = await db.getOne(
-        `SELECT SUM(amount) as rent_income
-         FROM transactions
-         WHERE EXTRACT(YEAR FROM date) = 2025
-           AND expense_type = 'rent'`
+        `SELECT SUM(amount::numeric) as rent_income
+         FROM payment_requests
+         WHERE year = 2025
+           AND bill_type = 'rent'
+           AND status = 'paid'`
       );
       
       // Calculate expected rent income for 2025
@@ -486,6 +506,33 @@ app.post('/api/payment-requests/:id/forego', async (req, res) => {
     // No expense adjustment is made - the expense remains as-is
     
     res.json({ success: true, message: 'Payment has been foregone' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Undo a payment (reset from paid to pending)
+app.post('/api/payment-requests/:id/undo', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { undoPayment } = require('./scripts/undo-payment');
+    
+    const result = await undoPayment(parseInt(id));
+    
+    if (result.success) {
+      // Get the updated payment request
+      const updated = await db.getOne(
+        'SELECT * FROM payment_requests WHERE id = $1',
+        [id]
+      );
+      res.json({ 
+        success: true, 
+        message: `Payment request #${id} has been reset to pending`,
+        paymentRequest: updated
+      });
+    } else {
+      res.status(400).json({ error: result.error });
+    }
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

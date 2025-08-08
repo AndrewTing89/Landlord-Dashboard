@@ -177,6 +177,16 @@ export default function Dashboard() {
   };
 
   const calculateTotals = () => {
+    // Use ytdTotals if available (for 2025 data), otherwise fall back to summary calculation
+    if (ytdTotals) {
+      return {
+        totalRevenue: ytdTotals.actualRentIncome + ytdTotals.utilityReimbursements,
+        totalExpenses: ytdTotals.totalExpenses,
+        netIncome: ytdTotals.netIncome
+      };
+    }
+    
+    // Fallback for non-2025 data
     const totalRevenue = parseFloat(summary.find(s => s.expense_type === 'rent')?.total_amount || '0');
     const totalExpenses = summary
       .filter(s => s.expense_type !== 'rent' && s.expense_type !== 'utility_reimbursement')
