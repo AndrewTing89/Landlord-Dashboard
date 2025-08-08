@@ -70,16 +70,16 @@ export default function Ledger() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  // Filters
-  const [startDate, setStartDate] = useState<Date | null>(startOfMonth(new Date()));
-  const [endDate, setEndDate] = useState<Date | null>(endOfMonth(new Date()));
+  // Filters - default to showing all of 2025
+  const [startDate, setStartDate] = useState<Date | null>(startOfYear(new Date(2025, 0, 1)));
+  const [endDate, setEndDate] = useState<Date | null>(endOfYear(new Date()));
   const [entryType, setEntryType] = useState<'all' | 'income' | 'expense'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [view, setView] = useState<'list' | 'summary'>('list');
   
-  // Pagination
+  // Pagination - default to 50 rows to show more data
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(25);
+  const [rowsPerPage, setRowsPerPage] = useState(50);
   
   useEffect(() => {
     fetchLedgerData();

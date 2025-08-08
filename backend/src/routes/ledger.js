@@ -9,6 +9,31 @@ router.get('/', async (req, res) => {
   try {
     const { start_date, end_date, type, search, limit = 100, offset = 0 } = req.query;
     
+    // Build parameters array first to know the indices
+    const params = [];
+    let paramIndex = 0;
+    let startDateParam = '';
+    let endDateParam = '';
+    let searchParam = '';
+    
+    if (start_date) {
+      params.push(start_date);
+      paramIndex++;
+      startDateParam = `$${paramIndex}`;
+    }
+    
+    if (end_date) {
+      params.push(end_date);
+      paramIndex++;
+      endDateParam = `$${paramIndex}`;
+    }
+    
+    if (search) {
+      params.push(`%${search}%`);
+      paramIndex++;
+      searchParam = `$${paramIndex}`;
+    }
+    
     // Build the query using UNION to combine income and expenses
     let query = `
       WITH ledger_entries AS (
@@ -29,8 +54,8 @@ router.get('/', async (req, res) => {
         FROM income i
         LEFT JOIN payment_requests pr ON i.payment_request_id = pr.id
         WHERE 1=1
-        ${start_date ? "AND i.date >= $1" : ""}
-        ${end_date ? "AND i.date <= $2" : ""}
+        ${start_date ? `AND i.date >= ${startDateParam}` : ""}
+        ${end_date ? `AND i.date <= ${endDateParam}` : ""}
         ${type === 'income' ? "" : type === 'expense' ? "AND FALSE" : ""}
         
         UNION ALL
@@ -51,46 +76,45 @@ router.get('/', async (req, res) => {
           NULL as payment_status
         FROM expenses e
         WHERE e.expense_type != 'other'
-        ${start_date ? "AND e.date >= $1" : ""}
-        ${end_date ? "AND e.date <= $2" : ""}
+        ${start_date ? `AND e.date >= ${startDateParam}` : ""}
+        ${end_date ? `AND e.date <= ${endDateParam}` : ""}
         ${type === 'expense' ? "" : type === 'income' ? "AND FALSE" : ""}
       )
       SELECT 
         *,
         SUM(CASE WHEN entry_type = 'income' THEN amount ELSE -amount END) 
-          OVER (ORDER BY date, created_at) as running_balance
+          OVER (ORDER BY date ASC, created_at ASC) as running_balance
       FROM ledger_entries
       WHERE 1=1
-      ${search ? "AND (LOWER(description) LIKE LOWER($3) OR LOWER(party) LIKE LOWER($3))" : ""}
+      ${search ? `AND (LOWER(description) LIKE LOWER(${searchParam}) OR LOWER(party) LIKE LOWER(${searchParam}))` : ""}
       ORDER BY date DESC, created_at DESC
-      LIMIT ${limit}
-      OFFSET ${offset}
+      LIMIT ${parseInt(limit)}
+      OFFSET ${parseInt(offset)}
     `;
-    
-    const params = [];
-    if (start_date) params.push(start_date);
-    if (end_date) params.push(end_date);
-    if (search) params.push(`%${search}%`);
     
     const result = await db.query(query, params);
     
-    // Get totals for the period
+    // Get totals for the period - use only date params
+    const totalsParams = [];
+    if (start_date) totalsParams.push(start_date);
+    if (end_date) totalsParams.push(end_date);
+    
     const totalsQuery = `
       WITH period_totals AS (
         SELECT 
           COALESCE(SUM(amount), 0) as total_income
         FROM income
         WHERE 1=1
-        ${start_date ? "AND date >= $1" : ""}
-        ${end_date ? "AND date <= $2" : ""}
+        ${start_date ? `AND date >= ${startDateParam}` : ""}
+        ${end_date ? `AND date <= ${endDateParam}` : ""}
       ),
       expense_totals AS (
         SELECT 
           COALESCE(SUM(amount), 0) as total_expenses
         FROM expenses
         WHERE expense_type != 'other'
-        ${start_date ? "AND date >= $1" : ""}
-        ${end_date ? "AND date <= $2" : ""}
+        ${start_date ? `AND date >= ${startDateParam}` : ""}
+        ${end_date ? `AND date <= ${endDateParam}` : ""}
       )
       SELECT 
         pi.total_income,
@@ -99,7 +123,7 @@ router.get('/', async (req, res) => {
       FROM period_totals pi, expense_totals et
     `;
     
-    const totals = await db.query(totalsQuery, params.slice(0, 2)); // Only date params
+    const totals = await db.query(totalsQuery, totalsParams);
     
     res.json({
       entries: result.rows,
