@@ -454,21 +454,25 @@ app.post('/api/payment-requests/:id/mark-paid', async (req, res) => {
         console.log('Warning: Could not find matching utility expense transaction');
       }
       
-      // Also create a recuperation transaction to show as income
-      const utilityName = paymentRequest.bill_type === 'electricity' ? 'PG&E' : 'Water';
-      await db.insert('transactions', {
-        plaid_transaction_id: `recuperation_${paymentRequest.id}_${Date.now()}`,
-        plaid_account_id: 'manual_entry',
-        amount: parseFloat(paymentRequest.amount),
-        date: new Date(),
-        name: `${paymentRequest.roommate_name} - ${utilityName} Payment`,
-        merchant_name: paymentRequest.roommate_name,
-        expense_type: 'utility_reimbursement',
-        category: 'Reimbursement',
-        subcategory: `${paymentRequest.bill_type} payment`
-      });
-      
-      console.log(`Created recuperation transaction for ${paymentRequest.roommate_name}`);
+      // Only create recuperation transaction for utilities, not rent
+      if (paymentRequest.bill_type !== 'rent') {
+        const utilityName = paymentRequest.bill_type === 'electricity' ? 'PG&E' : 'Water';
+        await db.insert('transactions', {
+          plaid_transaction_id: `recuperation_${paymentRequest.id}_${Date.now()}`,
+          plaid_account_id: 'manual_entry',
+          amount: -parseFloat(paymentRequest.amount), // Negative for income
+          date: new Date(),
+          name: `${paymentRequest.roommate_name} - ${utilityName} Payment`,
+          merchant_name: paymentRequest.roommate_name,
+          expense_type: 'utility_reimbursement',
+          category: 'Reimbursement',
+          subcategory: `${paymentRequest.bill_type} payment`
+        });
+        
+        console.log(`Created recuperation transaction for ${paymentRequest.roommate_name}`);
+      } else {
+        console.log('Rent payment marked as paid - no transaction created (income tracked via payment_requests)');
+      }
       
       
       await db.query('COMMIT');
@@ -515,7 +519,7 @@ app.post('/api/payment-requests/:id/forego', async (req, res) => {
 app.post('/api/payment-requests/:id/undo', async (req, res) => {
   try {
     const { id } = req.params;
-    const { undoPayment } = require('./scripts/undo-payment');
+    const { undoPayment } = require('../scripts/undo-payment');
     
     const result = await undoPayment(parseInt(id));
     
