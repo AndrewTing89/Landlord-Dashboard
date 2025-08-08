@@ -15,15 +15,6 @@ I built this system to solve a real problem: managing shared expenses in my rent
 ### The Solution
 An intelligent automation system that handles everything from bank sync to payment tracking, reducing 10+ hours of monthly work to just minutes of review.
 
-## 📸 Screenshots
-
-> **Note**: Add screenshots here by taking captures of your running application:
-> 1. Dashboard Overview - Show the main dashboard with charts and YTD totals
-> 2. Payment Requests - Display the payment request cards with Venmo links
-> 3. Transaction Review - Show the review interface with pending transactions
-> 4. Email Sync - Display the Gmail integration and matched payments
-> 5. Discord Notifications - Screenshot of Discord payment alerts
-
 ## 🚀 Key Features & Technical Achievements
 
 ### 1. Intelligent Bank Synchronization
@@ -31,12 +22,14 @@ An intelligent automation system that handles everything from bank sync to payme
 - **Custom ETL Pipeline**: Designed rules engine that categorizes transactions with 95% accuracy
 - **Duplicate Prevention**: Implemented transaction fingerprinting to prevent double-counting
 - **Historical Import**: Processes years of CSV data for complete financial history
+- **2-Week Quick Sync**: Dashboard buttons for targeted bank and Gmail syncs
 
 ### 2. Automated Payment Management System
 - **Smart Bill Detection**: Algorithm identifies utility bills from transaction patterns
 - **Automatic Split Calculation**: Precisely divides expenses among 3 roommates
 - **Venmo Deep Linking**: Generates one-click payment URLs with pre-filled data
 - **Tracking System**: Unique IDs enable automatic payment-to-request matching
+- **Late Payment Handling**: Correctly attributes income to bill month, not payment date
 
 ### 3. Gmail OAuth Integration
 - **Secure Authentication**: Implemented OAuth 2.0 flow without storing passwords
@@ -46,11 +39,27 @@ An intelligent automation system that handles everything from bank sync to payme
   - Name match: 35% weight  
   - Note keywords: 15% weight
 - **Special Rules**: Rent detection for payments ≥$1,600 starting August 2025
+- **Ignore Functionality**: Ability to dismiss unimportant unmatched emails
 
-### 4. Real-time Notification System
+### 4. Clean Architecture Implementation
+- **Separation of Concerns**: Separate `income` and `expenses` tables for clarity
+- **Single Source of Truth**: Income table serves as authoritative revenue source
+- **Stacked Revenue Charts**: Visual breakdown of rent vs utility reimbursements
+- **Proper Month Attribution**: Late payments recorded in appropriate accounting period
+
+### 5. Data Integrity & Health Monitoring
+- **Health Check Dashboard**: Real-time system status monitoring
+- **Process Pending Button**: One-click processing of 200+ raw transactions
+- **Audit Logging**: Complete history of all database changes
+- **Data Validation**: Middleware preventing impossible states
+- **Backup/Restore System**: PostgreSQL dumps with restore capability
+- **Caching Layer**: In-memory cache with TTL for performance
+
+### 6. Real-time Notification System
 - **Multi-channel Webhooks**: Discord integration for different event types
 - **Rich Embeds**: Beautiful notification cards with actionable links
 - **Status Tracking**: Automatic updates when payments are confirmed
+- **Sync Logging**: Detailed logs of all sync operations with results
 
 ## 💻 Technical Architecture
 
@@ -62,13 +71,18 @@ An intelligent automation system that handles everything from bank sync to payme
 
 ### Database Design
 ```sql
--- Core tables with intelligent relationships
-transactions          -- Categorized financial records
+-- Clean architecture with separated concerns
+income               -- All revenue (rent, reimbursements) with proper month attribution
+expenses             -- All property expenses with categorization
+transactions         -- Processed bank transactions (legacy, being phased out)
 raw_transactions     -- Unprocessed bank data requiring review  
 payment_requests     -- Roommate payment tracking with Venmo links
-etl_rules           -- Transaction categorization rules
-venmo_emails        -- Gmail-synced payment confirmations
-utility_bills       -- Detected utility expenses
+etl_rules           -- Transaction categorization rules (priority 100+ = auto-approve)
+venmo_emails        -- Gmail-synced payment confirmations with ignore capability
+utility_bills       -- Detected utility expenses for splitting
+utility_adjustments  -- Tracks reimbursements reducing net expenses
+sync_history        -- Complete audit trail of all sync operations
+audit_log           -- Database change tracking with before/after values
 ```
 
 ### Key Algorithms
@@ -81,6 +95,16 @@ confidence = (
   nameMatch * 0.35 +      // Name verification
   noteMatch * 0.15        // Note keywords help confirm
 );
+```
+
+#### Late Payment Attribution
+```javascript
+// Income recorded in bill month, not payment month
+if (paymentRequest.month && paymentRequest.year) {
+  incomeDate = new Date(paymentRequest.year, paymentRequest.month - 1, 
+    paymentRequest.bill_type === 'rent' ? 1 : 15);
+}
+// Maintains accurate P&L per accounting period
 ```
 
 #### Venmo Link Generation
@@ -96,143 +120,123 @@ https://venmo.com/USERNAME?txn=charge&amount=XX.XX&note=KEY:VALUE format
 - **100% payment tracking** accuracy with automated matching
 - **95% transaction categorization** accuracy with ETL rules
 - **Zero missed payments** since implementing Discord notifications
+- **232 transactions** processed automatically with single button click
 
 ### Technical Achievements
-- Processed **5+ years** of historical transaction data
-- Handles **100+ transactions** per month automatically
-- Achieves **sub-second** response times on all API endpoints
-- Maintains **99.9% uptime** with error recovery mechanisms
+- **OAuth 2.0 implementation** without third-party auth libraries
+- **Custom ETL pipeline** processing thousands of transactions
+- **Fuzzy matching algorithm** for payment reconciliation  
+- **Responsive UI** working seamlessly on mobile and desktop
+- **Zero-downtime deployments** with PM2 cluster mode
+- **Complete audit trail** for tax compliance
 
-## 🔧 Technical Challenges Solved
+## 🛠️ Recent Improvements (August 2025)
 
-### 1. Venmo URL Scheme Compatibility
-**Problem**: Venmo's undocumented URL schemes behaved differently across platforms  
-**Solution**: Researched and tested multiple formats, implemented clean key:value notation without special characters that works universally
+### Data Integrity Enhancements
+- Added comprehensive health check system with automatic issue detection
+- Implemented audit logging for all database changes
+- Created data validation middleware preventing invalid states
+- Built backup/restore system for data protection
+- Added caching layer improving query performance
 
-### 2. Gmail API Rate Limiting
-**Problem**: Hitting Gmail API quotas during bulk email processing  
-**Solution**: Implemented intelligent batching and caching with 15-minute TTL
+### UI/UX Improvements
+- Converted revenue chart to stacked bars showing income breakdown
+- Standardized color scheme across all expense types
+- Added "Ignore" functionality for unmatched emails
+- Separated bank and Gmail sync with 2-week lookback buttons
+- Improved dashboard card design matching Payment Requests page
 
-### 3. Transaction Duplicate Detection
-**Problem**: Bank API sometimes returns duplicate transactions  
-**Solution**: Created fingerprinting algorithm using amount, date, and description hash
+### Financial Accuracy
+- Fixed income attribution to use bill month instead of payment date
+- Separated income and expenses into dedicated tables
+- Implemented proper handling of late payments
+- Added utility adjustments tracking for accurate net expenses
 
-### 4. Payment Matching Accuracy
-**Problem**: Matching Venmo confirmation emails to payment requests  
-**Solution**: Developed confidence scoring algorithm with multiple weighted factors
+## 🚧 Installation & Setup
 
-## 🚦 System Architecture
+### Prerequisites
+- Node.js 18+
+- PostgreSQL 14+
+- Docker (for local services)
+- Gmail account with API access enabled
+- SimpleFIN account for bank connectivity
 
-```
-┌─────────────┐     ┌──────────────┐     ┌──────────────┐
-│   React     │────▶│   Express    │────▶│  PostgreSQL  │
-│  Frontend   │     │   Backend    │     │   Database   │
-└─────────────┘     └──────────────┘     └──────────────┘
-                            │
-                ┌───────────┼───────────┐
-                ▼           ▼           ▼
-         ┌──────────┐ ┌──────────┐ ┌──────────┐
-         │SimpleFIN │ │Gmail API │ │ Discord  │
-         │Bank Sync │ │  OAuth   │ │ Webhooks │
-         └──────────┘ └──────────┘ └──────────┘
-```
-
-## 🎓 What I Learned
-
-### Technical Skills Demonstrated
-- **Full-stack Development**: Complete ownership from database to UI
-- **API Integration**: Complex OAuth flows and webhook handling
-- **Database Design**: Normalized schema with optimized queries
-- **Algorithm Design**: Confidence scoring and pattern matching
-- **Error Handling**: Graceful degradation and recovery mechanisms
-- **Security**: OAuth implementation, environment variable management
-
-### Soft Skills Applied
-- **Problem Solving**: Identified real-world problem and built complete solution
-- **Project Management**: Managed scope from MVP to production system
-- **Documentation**: Comprehensive README and inline code documentation
-- **User Experience**: Intuitive UI that non-technical roommates can understand
-
-## 🔮 Future Enhancements
-
-- **Machine Learning**: Train model on historical data for better categorization
-- **Mobile App**: React Native app for on-the-go payment management
-- **Multi-property**: Scale to handle multiple rental properties
-- **Lease Management**: Add tenant screening and lease tracking
-- **Tax Integration**: Direct export to TurboTax/tax software
-
-## 📊 Code Statistics
-
-- **Lines of Code**: ~8,000
-- **Database Tables**: 15
-- **API Endpoints**: 25+
-- **React Components**: 20+
-- **Test Coverage**: 75%
-
-## 🛠️ Development Process
-
-### Version Control
-- **Git Flow**: Feature branches with descriptive commits
-- **Code Reviews**: Self-review with ESLint and Prettier
-- **Documentation**: Comprehensive CLAUDE.md for AI-assisted development
-
-### Development Environment
+### Environment Variables
 ```bash
-# Backend Development
-cd backend
-npm run dev         # Hot-reloading with nodemon
-
-# Frontend Development  
-cd frontend
-npm run dev         # Vite dev server with HMR
-
 # Database
-docker-compose up   # PostgreSQL + LocalStack
+DATABASE_URL=postgresql://user:pass@localhost:5432/landlord_dashboard
+
+# SimpleFIN API
+SIMPLEFIN_TOKEN=your_simplefin_token
+
+# Gmail OAuth
+GMAIL_CLIENT_ID=your_client_id
+GMAIL_CLIENT_SECRET=your_client_secret
+
+# Discord Webhooks
+DISCORD_WEBHOOK_PAYMENT_REQUESTS=webhook_url
+DISCORD_WEBHOOK_SYNC_LOGS=webhook_url
+
+# Configuration
+MONTHLY_RENT=1685
+ROOMMATE_NAME=Ushi Lo
+ROOMMATE_VENMO_USERNAME=@UshiLo
 ```
 
-## 📝 Key Files & Logic
+### Quick Start
+```bash
+# Clone repository
+git clone https://github.com/yourusername/landlord-dashboard.git
 
-### Payment Request Generation
-`backend/src/services/venmoLinkService.js`
-- Generates Venmo deep links with pre-filled payment data
-- Handles bill splitting logic (1/3 calculation)
-- Creates tracking IDs for payment matching
+# Install dependencies
+cd backend && npm install
+cd ../frontend && npm install
 
-### Gmail Integration
-`backend/src/services/gmailService.js`
-- OAuth 2.0 authentication flow
-- Email parsing and data extraction
-- Filters for roommate-specific payments
+# Start Docker services
+docker-compose up -d
 
-### Transaction ETL Pipeline
-`backend/src/services/transactionClassifier.js`
-- Rule-based categorization engine
-- Pattern matching for merchant names
-- Auto-approval for high-confidence matches
+# Run database migrations
+cd backend && npm run migrate
 
-### Dashboard Analytics
-`frontend/src/pages/Dashboard.tsx`
-- Real-time data aggregation
-- Chart.js integration for visualizations
-- Responsive Material-UI components
+# Start development servers
+npm run dev  # Backend on :3002
+cd ../frontend && npm run dev  # Frontend on :3000
+```
 
-## 🎯 Why This Project Matters
+## 📝 Usage
 
-This isn't just a CRUD app – it's a production system solving real problems with measurable impact. It demonstrates:
+### Daily Operations
+1. **Dashboard Sync**: Click "Sync Bank" or "Sync Gmail" for 2-week updates
+2. **Review Transactions**: Process pending items in Review page
+3. **Send Payment Requests**: One-click Venmo links from Payment Requests
+4. **Monitor Health**: Check system status in Health Check page
 
-1. **Full-stack Capability**: Complete ownership of a complex system
-2. **Problem-Solving**: Identified pain points and built automated solutions
-3. **Integration Skills**: Successfully integrated multiple third-party services
-4. **Production Mindset**: Built with error handling, logging, and monitoring
-5. **Business Value**: Saves significant time and prevents costly mistakes
+### Monthly Workflow
+1. Bank and Gmail sync captures all transactions
+2. Utility bills automatically detected and split
+3. Payment requests generated with tracking IDs
+4. Venmo confirmations matched automatically
+5. Dashboard shows real-time financial status
 
-## 📧 Contact
+## 🤝 Contributing
 
-**Andrew Ting**  
-- GitHub: [AndrewTing89](https://github.com/AndrewTing89)
-- LinkedIn: [Your LinkedIn]
-- Email: [Your Email]
+This is a personal project, but feel free to fork and adapt for your own use case. Key areas for extension:
+- Additional bank integrations beyond SimpleFIN
+- Support for more payment platforms (Zelle, PayPal)
+- Multi-property management
+- Tenant portal for payment history
+
+## 📄 License
+
+MIT License - See LICENSE file for details
+
+## 🙏 Acknowledgments
+
+- SimpleFIN for excellent bank API
+- Material-UI for beautiful React components
+- Discord.js community for webhook examples
+- PostgreSQL for rock-solid database performance
 
 ---
 
-*Built with ❤️ to solve real problems and showcase full-stack expertise*
+**Built with ❤️ to solve real problems and save real time**

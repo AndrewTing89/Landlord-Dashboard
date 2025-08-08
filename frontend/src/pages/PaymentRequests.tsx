@@ -383,25 +383,24 @@ export default function PaymentRequests() {
 
   // Get payment status steps based on emails
   const getPaymentStatus = (request: PaymentRequest) => {
-    const emails = emailsByRequest[request.id] || [];
-    const hasRequestSent = emails.some(e => e.email_type === 'request_sent');
-    const hasPaymentReceived = emails.some(e => e.email_type === 'payment_received');
+    const hasRequestSent = request.status === 'sent';
+    const hasPaymentReceived = request.status === 'paid';
     
     const steps = [
       { 
         label: 'Record Created',
         completed: true,
-        active: !hasRequestSent && !hasPaymentReceived
+        active: request.status === 'pending'
       },
       { 
-        label: hasRequestSent ? 'Request: Confirmed' : 'Request: Pending',
+        label: hasRequestSent ? 'Request: Sent' : 'Request: Pending',
         completed: hasRequestSent || hasPaymentReceived,
         active: hasRequestSent && !hasPaymentReceived
       },
       { 
         label: hasPaymentReceived ? 'Payment: Received' : 'Payment: Pending',
         completed: hasPaymentReceived,
-        active: hasRequestSent && !hasPaymentReceived
+        active: false
       }
     ];
     
@@ -593,7 +592,7 @@ export default function PaymentRequests() {
                                     sx={{ cursor: 'pointer' }}
                                   />
                                 )}
-                                {request.status !== 'paid' && request.status !== 'foregone' && (
+                                {(request.status === 'pending' || request.status === 'sent') && (
                                   <>
                                     <Button
                                       variant="outlined"
@@ -616,11 +615,15 @@ export default function PaymentRequests() {
                                 )}
                                 <Chip
                                   label={request.status}
-                                  color={getStatusColor(request.status)}
+                                  color={
+                                    request.status === 'sent' ? 'warning' : 
+                                    getStatusColor(request.status)
+                                  }
                                   size="small"
                                   icon={
                                     request.status === 'paid' ? <CheckCircleIcon /> : 
                                     request.status === 'foregone' ? <LinkOffIcon /> : 
+                                    request.status === 'sent' ? <SendIcon /> :
                                     <ScheduleIcon />
                                   }
                                 />

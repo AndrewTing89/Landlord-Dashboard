@@ -29,6 +29,7 @@ import {
   RateReview as ReviewIcon,
   AccountBalance as AccountBalanceIcon,
   Email as EmailIcon,
+  HealthAndSafety as HealthIcon,
 } from '@mui/icons-material';
 
 const drawerWidth = 240;
@@ -43,6 +44,7 @@ const menuItems = [
   { text: 'Trends', icon: <ShowChartIcon />, path: '/trends' },
   { text: 'Bank Sync', icon: <SyncIcon />, path: '/sync' },
   { text: 'Email Sync', icon: <EmailIcon />, path: '/email-sync' },
+  { text: 'Health Check', icon: <HealthIcon />, path: '/health' },
   { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
 ];
 

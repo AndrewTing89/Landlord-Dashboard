@@ -93,6 +93,33 @@ router.post('/match', asyncHandler(async (req, res) => {
   sendSuccess(res, result, 'Payment matched successfully');
 }));
 
+// Ignore an unmatched email
+router.post('/ignore/:id', asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const db = require('../db/connection');
+  
+  if (!id) {
+    return sendError(res, 'Email ID is required', 400);
+  }
+  
+  // Update the email to mark it as ignored
+  const result = await db.query(`
+    UPDATE venmo_emails 
+    SET 
+      ignored = true,
+      manual_review_needed = false,
+      updated_at = NOW()
+    WHERE id = $1
+    RETURNING *
+  `, [id]);
+  
+  if (result.rowCount === 0) {
+    return sendError(res, 'Email not found', 404);
+  }
+  
+  sendSuccess(res, result.rows[0], 'Email ignored successfully');
+}));
+
 // Test email parsing (for debugging)
 router.post('/test-parse', asyncHandler(async (req, res) => {
   const { subject, body } = req.body;
@@ -117,7 +144,8 @@ router.get('/stats', asyncHandler(async (req, res) => {
     SELECT 
       COUNT(*) as total_emails,
       COUNT(CASE WHEN matched = true THEN 1 END) as matched_emails,
-      COUNT(CASE WHEN matched = false THEN 1 END) as unmatched_emails,
+      COUNT(CASE WHEN matched = false AND (ignored IS NULL OR ignored = false) THEN 1 END) as unmatched_emails,
+      COUNT(CASE WHEN ignored = true THEN 1 END) as ignored_emails,
       MAX(received_date) as last_sync
     FROM venmo_emails
   `);

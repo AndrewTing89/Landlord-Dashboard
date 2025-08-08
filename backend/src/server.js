@@ -8,6 +8,8 @@ const s3Service = require('./services/s3Service');
 const emailMonitor = require('./services/emailMonitorService');
 const venmoEmailMonitor = require('./services/venmoEmailMonitorService');
 const simplefinService = require('./services/simplefinService');
+const { cache, invalidateRelatedCaches } = require('./services/cacheService');
+const backupService = require('./services/backupService');
 // Commenting out scraper services since we're using SimpleFIN
 // const bofaScraper = require('./services/bofaScraperService');
 // const pdfParser = require('./services/pdfParserService');
@@ -22,9 +24,22 @@ const PORT = process.env.PORT || 3001;
 
 // Import middleware
 const { errorHandler, notFoundHandler, asyncHandler } = require('./middleware/errorHandler');
-const { validateEnv } = require('./middleware/validation');
+const ValidationMiddleware = require('./middleware/validation');
 
 // Validate environment on startup
+function validateEnv() {
+  const required = ['DATABASE_URL', 'SIMPLEFIN_TOKEN'];
+  const missing = required.filter(key => !process.env[key]);
+  
+  if (missing.length > 0) {
+    console.error(`Missing required environment variables: ${missing.join(', ')}`);
+    console.error('Please check your .env file');
+    process.exit(1);
+  }
+  
+  console.log('✅ Environment variables validated');
+}
+
 validateEnv();
 
 // Middleware
@@ -45,6 +60,36 @@ app.use('/api/payment', routes.payments);
 app.use('/api/review', routes.review);
 app.use('/api/gmail', routes.gmail);
 app.use('/api/ledger', require('./routes/ledger'));
+app.use('/api/health', require('./routes/health'));
+app.use('/api/dashboard-sync', require('./routes/dashboard-sync'));
+
+// Backup routes
+app.post('/api/backup/create', async (req, res) => {
+  try {
+    const result = await backupService.createBackup('manual', 'user');
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/backup/restore/:id', async (req, res) => {
+  try {
+    const result = await backupService.restoreBackup(req.params.id);
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/backup/list', async (req, res) => {
+  try {
+    const backups = await backupService.listBackups();
+    res.json(backups);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // Plaid endpoints
 app.post('/api/plaid/create-link-token', async (req, res) => {
@@ -194,23 +239,26 @@ app.get('/api/monthly-comparison', async (req, res) => {
       monthly_revenue AS (
         SELECT 
           month,
+          SUM(CASE WHEN source = 'rent' THEN total_revenue ELSE 0 END) as rent_revenue,
+          SUM(CASE WHEN source = 'reimbursement' THEN total_revenue ELSE 0 END) as reimbursement_revenue,
           SUM(total_revenue) as total_revenue
         FROM (
-          -- Get rent from payment requests
+          -- Get rent from income table (single source of truth)
           SELECT 
-            month::integer as month,
-            SUM(amount::numeric) as total_revenue
-          FROM payment_requests
-          WHERE year = $1
-            AND bill_type = 'rent'
-            AND status = 'paid'
-          GROUP BY month
+            EXTRACT(MONTH FROM date)::integer as month,
+            'rent' as source,
+            SUM(amount) as total_revenue
+          FROM income
+          WHERE EXTRACT(YEAR FROM date) = $1
+            AND income_type = 'rent'
+          GROUP BY EXTRACT(MONTH FROM date)
           
           UNION ALL
           
           -- Get utility reimbursements from income table
           SELECT 
             EXTRACT(MONTH FROM date)::integer as month,
+            'reimbursement' as source,
             SUM(amount) as total_revenue
           FROM income
           WHERE EXTRACT(YEAR FROM date) = $1
@@ -225,6 +273,8 @@ app.get('/api/monthly-comparison', async (req, res) => {
       SELECT 
         am.month,
         COALESCE(mr.total_revenue, 0) as revenue,
+        COALESCE(mr.rent_revenue, 0) as rent_revenue,
+        COALESCE(mr.reimbursement_revenue, 0) as reimbursement_revenue,
         COALESCE(me.total_expenses, 0) as expenses,
         COALESCE(mr.total_revenue, 0) - COALESCE(me.total_expenses, 0) as net_income
       FROM all_months am
@@ -266,6 +316,8 @@ app.get('/api/monthly-comparison', async (req, res) => {
       return {
         month: monthNames[row.month - 1],
         revenue: parseFloat(row.revenue),
+        rent: parseFloat(row.rent_revenue),
+        reimbursements: parseFloat(row.reimbursement_revenue),
         expenses: parseFloat(row.expenses),
         netIncome: parseFloat(row.net_income),
         // Add individual expense types
@@ -504,8 +556,22 @@ app.post('/api/payment-requests/:id/mark-paid', async (req, res) => {
         ? `Rent Payment - ${paymentRequest.roommate_name}`
         : `${paymentRequest.roommate_name} - ${paymentRequest.bill_type === 'electricity' ? 'PG&E' : 'Water'} Payment`;
       
+      // Use the month/year from the payment request for proper attribution
+      // For utilities, this ensures income matches the expense month
+      // For rent, it goes to the month it was for (e.g., March rent paid in August still goes to March)
+      let incomeDate;
+      if (paymentRequest.month && paymentRequest.year) {
+        // Use the 15th of the month for utilities, 1st for rent
+        const day = paymentRequest.bill_type === 'rent' ? 1 : 15;
+        incomeDate = new Date(paymentRequest.year, paymentRequest.month - 1, day);
+      } else {
+        // Fallback to current date if month/year not set (shouldn't happen)
+        console.warn(`Payment request ${id} missing month/year, using current date`);
+        incomeDate = new Date();
+      }
+      
       await db.insert('income', {
-        date: new Date(),
+        date: incomeDate,
         amount: parseFloat(paymentRequest.amount), // Positive for income
         description: description,
         income_type: incomeType,
@@ -513,7 +579,7 @@ app.post('/api/payment-requests/:id/mark-paid', async (req, res) => {
         source_type: 'payment_request',
         payment_request_id: paymentRequest.id,
         payer_name: paymentRequest.roommate_name,
-        notes: `Payment request #${paymentRequest.id} marked as paid`
+        notes: `Payment request #${paymentRequest.id} marked as paid on ${new Date().toISOString().split('T')[0]}`
       });
       
       console.log(`Created income record for ${paymentRequest.roommate_name} - ${incomeType}`);

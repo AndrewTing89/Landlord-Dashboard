@@ -42,6 +42,7 @@ interface EmailStats {
   total_emails: string;
   matched_emails: string;
   unmatched_emails: string;
+  ignored_emails?: string;
   last_sync: string | null;
   gmail_connected: boolean;
 }
@@ -197,6 +198,11 @@ export default function EmailSyncManagement() {
                 <Typography variant="h4" color="warning.main">
                   {emailStats.unmatched_emails || '0'}
                 </Typography>
+                {emailStats.ignored_emails && parseInt(emailStats.ignored_emails) > 0 && (
+                  <Typography variant="caption" color="textSecondary">
+                    ({emailStats.ignored_emails} ignored)
+                  </Typography>
+                )}
               </CardContent>
             </Card>
           </Grid>

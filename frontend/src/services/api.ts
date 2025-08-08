@@ -115,6 +115,26 @@ export const apiService = {
     end_date?: string;
     group_by?: 'day' | 'month' | 'year';
   }) => api.get(config.api.endpoints.ledgerSummary, { params }),
+
+  // Health check endpoints
+  getHealthStatus: () =>
+    api.get('/api/health/status'),
+  
+  processPendingTransactions: () =>
+    api.post('/api/health/process-pending'),
+  
+  fixDataIntegrity: () =>
+    api.post('/api/health/fix-integrity'),
+  
+  // Backup/restore endpoints
+  createBackup: () =>
+    api.post('/api/backup/create'),
+  
+  restoreBackup: (backupId: string) =>
+    api.post(`/api/backup/restore/${backupId}`),
+  
+  listBackups: () =>
+    api.get('/api/backup/list'),
 };
 
 export default api;

@@ -34,7 +34,8 @@ import {
   Error as ErrorIcon,
   Link as LinkIcon,
   Visibility as VisibilityIcon,
-  AttachMoney as MoneyIcon
+  AttachMoney as MoneyIcon,
+  Block as BlockIcon
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import axios from 'axios';
@@ -75,6 +76,7 @@ const EmailReview: React.FC = () => {
     selectedRequest: number | null;
   }>({ open: false, email: null, selectedRequest: null });
   const [matching, setMatching] = useState(false);
+  const [ignoringEmail, setIgnoringEmail] = useState<number | null>(null);
 
   const fetchData = async () => {
     try {
@@ -101,6 +103,27 @@ const EmailReview: React.FC = () => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const handleIgnore = async (emailId: number) => {
+    if (!window.confirm('Are you sure you want to ignore this email? It will no longer appear in the unmatched list.')) {
+      return;
+    }
+    
+    try {
+      setIgnoringEmail(emailId);
+      const response = await axios.post(`/api/gmail/ignore/${emailId}`);
+      
+      if (response.data.success) {
+        // Show success message briefly, then refresh
+        alert('Email ignored successfully');
+        fetchData(); // Refresh data
+      }
+    } catch (err: any) {
+      alert(`Error ignoring email: ${err.response?.data?.error || err.message}`);
+    } finally {
+      setIgnoringEmail(null);
+    }
+  };
 
   const handleMatch = async () => {
     if (!matchDialog.email || !matchDialog.selectedRequest) return;
@@ -264,6 +287,16 @@ const EmailReview: React.FC = () => {
                                 <VisibilityIcon fontSize="small" />
                               </IconButton>
                             </Tooltip>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              color="warning"
+                              startIcon={ignoringEmail === email.id ? <CircularProgress size={16} /> : <BlockIcon />}
+                              onClick={() => handleIgnore(email.id)}
+                              disabled={ignoringEmail === email.id}
+                            >
+                              Ignore
+                            </Button>
                             <Button
                               size="small"
                               variant="contained"

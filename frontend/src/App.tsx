@@ -12,6 +12,7 @@ import Review from './pages/Review';
 import SyncManagement from './pages/SyncManagement';
 import PaymentTrackingSimpleCards from './pages/PaymentTrackingSimpleCards';
 import EmailSyncManagement from './pages/EmailSyncManagement';
+import HealthCheck from './pages/HealthCheck';
 
 function App() {
   return (
@@ -29,6 +30,7 @@ function App() {
           <Route path="trends" element={<Trends />} />
           <Route path="sync" element={<SyncManagement />} />
           <Route path="email-sync" element={<EmailSyncManagement />} />
+          <Route path="health" element={<HealthCheck />} />
           <Route path="settings" element={<Settings />} />
         </Route>
       </Routes>

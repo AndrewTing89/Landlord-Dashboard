@@ -381,6 +381,7 @@ class VenmoMatchingService {
    */
   async getUnmatchedEmails() {
     // Get ALL unmatched emails, not just those in the venmo_unmatched_emails table
+    // Exclude ignored emails
     return await db.getMany(`
       SELECT 
         ve.*,
@@ -388,8 +389,8 @@ class VenmoMatchingService {
         vue.resolution_status
       FROM venmo_emails ve
       LEFT JOIN venmo_unmatched_emails vue ON ve.id = vue.venmo_email_id
-      WHERE ve.matched = false
-        OR vue.resolution_status = 'pending'
+      WHERE (ve.matched = false OR vue.resolution_status = 'pending')
+        AND (ve.ignored IS NULL OR ve.ignored = false)
       ORDER BY ve.received_date DESC
     `);
   }

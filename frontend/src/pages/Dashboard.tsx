@@ -42,6 +42,10 @@ import {
   CheckCircle as CheckCircleIcon,
   Schedule as ScheduleIcon,
 } from '@mui/icons-material';
+import {
+  AccountBalance as BankIcon,
+  Email as EmailIcon,
+} from '@mui/icons-material';
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, LineChart, Line, XAxis, YAxis, CartesianGrid, BarChart, Bar } from 'recharts';
 import { apiService } from '../services/api';
 import { ExpenseSummary, Transaction, PaymentRequest } from '../types';
@@ -107,7 +111,8 @@ export default function Dashboard() {
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
   const [pendingPayments, setPendingPayments] = useState<PaymentRequest[]>([]);
   const [monthlyData, setMonthlyData] = useState<any[]>([]);
-  const [syncing, setSyncing] = useState(false);
+  const [syncingBank, setSyncingBank] = useState(false);
+  const [syncingGmail, setSyncingGmail] = useState(false);
   const [monthDialog, setMonthDialog] = useState<MonthDetailDialogState>({
     open: false,
     month: '',
@@ -184,27 +189,49 @@ export default function Dashboard() {
     }
   };
 
-  const handleSync = async () => {
+  const handleBankSync = async () => {
     try {
-      setSyncing(true);
-      const response = await apiService.syncTransactions();
+      setSyncingBank(true);
+      setError(null);
+      const response = await apiService.post('/api/dashboard-sync/bank');
       
-      // Show success message
       if (response.data.success) {
-        console.log('Sync completed:', response.data.message);
-        // Refresh the dashboard data
+        console.log('Bank sync completed:', response.data);
+        alert(`Bank sync completed! Imported ${response.data.imported} transactions, ${response.data.billsProcessed} bills processed.`);
         await fetchDashboardData();
       }
     } catch (err: any) {
-      console.error('Sync error:', err);
-      // Show a more user-friendly error
+      console.error('Bank sync error:', err);
       if (err.response?.data?.error) {
-        setError(`Sync failed: ${err.response.data.error}`);
+        setError(`Bank sync failed: ${err.response.data.error}`);
       } else {
-        setError('Failed to sync transactions. Please connect your bank account first.');
+        setError('Failed to sync bank transactions. Please check your connection.');
       }
     } finally {
-      setSyncing(false);
+      setSyncingBank(false);
+    }
+  };
+
+  const handleGmailSync = async () => {
+    try {
+      setSyncingGmail(true);
+      setError(null);
+      const response = await apiService.post('/api/dashboard-sync/gmail');
+      
+      if (response.data.success) {
+        console.log('Gmail sync completed:', response.data);
+        alert(`Gmail sync completed! Found ${response.data.emailsFound} emails, matched ${response.data.matched} to payments.`);
+        await fetchDashboardData();
+      }
+    } catch (err: any) {
+      console.error('Gmail sync error:', err);
+      if (err.response?.data?.error) {
+        setError(`Gmail sync failed: ${err.response.data.error}`);
+      } else {
+        setError('Failed to sync Gmail. Please check your Gmail connection.');
+      }
+    } finally {
+      setSyncingGmail(false);
     }
   };
 
@@ -395,14 +422,26 @@ export default function Dashboard() {
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Typography variant="h4">YTD Dashboard</Typography>
-        <Button
-          variant="contained"
-          startIcon={<SyncIcon />}
-          onClick={handleSync}
-          disabled={syncing}
-        >
-          {syncing ? 'Syncing...' : 'Sync Now'}
-        </Button>
+        <Box display="flex" gap={1}>
+          <Button
+            variant="outlined"
+            startIcon={syncingBank ? <CircularProgress size={18} /> : <BankIcon />}
+            onClick={handleBankSync}
+            disabled={syncingBank || syncingGmail}
+            size="small"
+          >
+            {syncingBank ? 'Syncing...' : 'Sync Bank (2 weeks)'}
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={syncingGmail ? <CircularProgress size={18} /> : <EmailIcon />}
+            onClick={handleGmailSync}
+            disabled={syncingBank || syncingGmail}
+            size="small"
+          >
+            {syncingGmail ? 'Syncing...' : 'Sync Gmail (2 weeks)'}
+          </Button>
+        </Box>
       </Box>
 
       {/* Summary Cards - Now with 6 cards */}
@@ -760,11 +799,18 @@ export default function Dashboard() {
                   />
                   <Legend />
                   
-                  {/* Revenue Bar - single bar */}
+                  {/* Revenue Bars - stacked */}
                   <Bar 
-                    dataKey="revenue" 
+                    dataKey="rent" 
+                    stackId="revenue"
                     fill="#4CAF50"
-                    name="Revenue"
+                    name="Rent"
+                  />
+                  <Bar 
+                    dataKey="reimbursements" 
+                    stackId="revenue"
+                    fill="#81C784"
+                    name="Reimbursements"
                   />
                   
                   {/* Expense Bars - stacked */}
