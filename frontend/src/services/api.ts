@@ -99,6 +99,22 @@ export const apiService = {
   // Transaction management
   updateTransactionCategory: (id: number, expenseType: string) =>
     api.put(`/api/transactions/${id}/category`, { expense_type: expenseType }),
+  
+  // Ledger
+  getLedger: (params?: {
+    start_date?: string;
+    end_date?: string;
+    type?: 'income' | 'expense';
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }) => api.get(config.api.endpoints.ledger, { params }),
+  
+  getLedgerSummary: (params?: {
+    start_date?: string;
+    end_date?: string;
+    group_by?: 'day' | 'month' | 'year';
+  }) => api.get(config.api.endpoints.ledgerSummary, { params }),
 };
 
 export default api;

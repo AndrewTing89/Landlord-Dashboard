@@ -20,6 +20,8 @@ const config = {
       summary: '/api/summary',
       monthlyComparison: '/api/monthly-comparison',
       paymentRequests: '/api/payment-requests',
+      ledger: '/api/ledger',
+      ledgerSummary: '/api/ledger/summary',
     }
   },
   

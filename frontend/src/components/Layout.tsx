@@ -35,6 +35,7 @@ const drawerWidth = 240;
 
 const menuItems = [
   { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard' },
+  { text: 'Ledger', icon: <AccountBalanceIcon />, path: '/ledger' },
   { text: 'Transactions', icon: <ReceiptIcon />, path: '/transactions' },
   { text: 'Review', icon: <ReviewIcon />, path: '/review' },
   { text: 'Payment Requests', icon: <PaymentIcon />, path: '/payments' },
