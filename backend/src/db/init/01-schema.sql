@@ -66,17 +66,6 @@ CREATE TABLE IF NOT EXISTS monthly_reports (
     UNIQUE(month, year)
 );
 
--- Plaid tokens storage
-CREATE TABLE IF NOT EXISTS plaid_tokens (
-    id SERIAL PRIMARY KEY,
-    access_token TEXT NOT NULL,
-    item_id VARCHAR(255) NOT NULL,
-    institution_name VARCHAR(255),
-    accounts JSONB,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
 -- Job runs tracking
 CREATE TABLE IF NOT EXISTS job_runs (
     id SERIAL PRIMARY KEY,

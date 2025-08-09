@@ -3,7 +3,6 @@ const cors = require('cors');
 require('dotenv').config();
 
 const db = require('./db/connection');
-const plaidService = require('./services/plaidService');
 const s3Service = require('./services/s3Service');
 const emailMonitor = require('./services/emailMonitorService');
 const venmoEmailMonitor = require('./services/venmoEmailMonitorService');
@@ -15,7 +14,6 @@ const backupService = require('./services/backupService');
 // const pdfParser = require('./services/pdfParserService');
 
 // Import Lambda handlers
-const plaidSync = require('./lambdas/plaidSync');
 const processBills = require('./lambdas/processBills');
 const generateReport = require('./lambdas/generateReport');
 
@@ -108,35 +106,8 @@ app.post('/api/plaid/create-link-token', async (req, res) => {
   }
 });
 
-app.post('/api/plaid/exchange-public-token', async (req, res) => {
-  try {
-    const { public_token } = req.body;
-    const tokenData = await plaidService.exchangePublicToken(public_token);
-    
-    // Save to database
-    await db.insert('plaid_tokens', {
-      access_token: tokenData.access_token,
-      item_id: tokenData.item_id,
-      institution_name: tokenData.institution
-    });
-    
-    res.json({ success: true, item_id: tokenData.item_id });
-  } catch (error) {
-    console.error('Error exchanging public token:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
 
 // Lambda function endpoints (for local testing)
-app.post('/api/lambda/plaid-sync', async (req, res) => {
-  try {
-    const result = await plaidSync.handler({}, {});
-    res.status(result.statusCode).json(JSON.parse(result.body));
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
 app.post('/api/lambda/process-bills', async (req, res) => {
   try {
     const result = await processBills.handler(req.body || {}, {});
