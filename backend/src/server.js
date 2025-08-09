@@ -167,6 +167,37 @@ app.post('/api/lambda/generate-report', async (req, res) => {
   }
 });
 
+// Generate tax report
+app.post('/api/generate-tax-report', async (req, res) => {
+  try {
+    const { year } = req.body;
+    
+    if (!year) {
+      return res.status(400).json({ error: 'Year is required' });
+    }
+    
+    const taxReportService = require('./services/taxReportService');
+    const result = await taxReportService.generateAnnualTaxReport(year);
+    
+    // Send the file as download
+    const fs = require('fs');
+    const path = require('path');
+    
+    res.download(result.filePath, result.fileName, (err) => {
+      if (err) {
+        console.error('Error sending file:', err);
+        res.status(500).json({ error: 'Failed to download report' });
+      }
+      
+      // Optionally delete the file after sending
+      // fs.unlinkSync(result.filePath);
+    });
+  } catch (error) {
+    console.error('Error generating tax report:', error);
+    res.status(500).json({ error: 'Failed to generate tax report' });
+  }
+});
+
 // Dashboard endpoints
 app.get('/api/transactions', async (req, res) => {
   try {
@@ -397,31 +428,13 @@ app.get('/api/summary', async (req, res) => {
            AND t.expense_type NOT IN ('rent', 'other', 'utility_reimbursement')`
       );
       
-      // Get actual rent income from paid payment requests
+      // Get actual rent income from income table
       const rentIncomeResult = await db.getOne(
-        `SELECT SUM(amount::numeric) as rent_income
-         FROM payment_requests
-         WHERE year = 2025
-           AND bill_type = 'rent'
-           AND status = 'paid'`
+        `SELECT SUM(amount) as rent_income
+         FROM income
+         WHERE EXTRACT(YEAR FROM date) = 2025
+           AND income_type = 'rent'`
       );
-      
-      // Calculate expected rent income for 2025
-      // $1685 per month, but only count months that have passed
-      const currentDate = new Date();
-      const currentYear = currentDate.getFullYear();
-      const currentMonth = currentDate.getMonth() + 1; // JavaScript months are 0-indexed
-      let monthsWithRent = 0;
-      
-      if (currentYear === 2025) {
-        // If we're in 2025, count months up to current month if date has passed
-        monthsWithRent = currentDate.getDate() >= 1 ? currentMonth : currentMonth - 1;
-      } else if (currentYear > 2025) {
-        // If we're past 2025, count all 12 months
-        monthsWithRent = 12;
-      }
-      
-      const expectedRentIncome = monthsWithRent * 1685;
       
       // Get utility reimbursements from income table
       const reimbursementsResult = await db.getOne(
@@ -431,12 +444,16 @@ app.get('/api/summary', async (req, res) => {
            AND income_type = 'utility_reimbursement'`
       );
       
+      const actualRentIncome = parseFloat(rentIncomeResult.rent_income || 0);
+      const utilityReimbursements = parseFloat(reimbursementsResult.reimbursements || 0);
+      const totalExpenses = parseFloat(expensesResult.total_expenses || 0);
+      
       ytdTotals = {
-        totalExpenses: parseFloat(expensesResult.total_expenses || 0),
-        actualRentIncome: parseFloat(rentIncomeResult.rent_income || 0),
-        expectedRentIncome: expectedRentIncome,
-        utilityReimbursements: parseFloat(reimbursementsResult.reimbursements || 0),
-        netIncome: expectedRentIncome + parseFloat(reimbursementsResult.reimbursements || 0) - parseFloat(expensesResult.total_expenses || 0)
+        totalExpenses: totalExpenses,
+        actualRentIncome: actualRentIncome,
+        utilityReimbursements: utilityReimbursements,
+        // Net income now uses actual rent collected, not expected
+        netIncome: actualRentIncome + utilityReimbursements - totalExpenses
       };
     }
     
@@ -1353,6 +1370,158 @@ app.put('/api/transactions/:id/category', async (req, res) => {
   } catch (error) {
     console.error('Error updating transaction category:', error);
     res.status(500).json({ error: 'Failed to update transaction category' });
+  }
+});
+
+// Maintenance Tickets API endpoints
+app.get('/api/maintenance-tickets', async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT * FROM maintenance_tickets 
+      ORDER BY 
+        CASE status 
+          WHEN 'open' THEN 1 
+          WHEN 'in_progress' THEN 2 
+          WHEN 'completed' THEN 3 
+          WHEN 'cancelled' THEN 4 
+        END,
+        CASE priority 
+          WHEN 'urgent' THEN 1 
+          WHEN 'high' THEN 2 
+          WHEN 'medium' THEN 3 
+          WHEN 'low' THEN 4 
+        END,
+        created_at DESC
+    `);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching maintenance tickets:', error);
+    res.status(500).json({ error: 'Failed to fetch maintenance tickets' });
+  }
+});
+
+app.post('/api/maintenance-tickets', async (req, res) => {
+  try {
+    const {
+      title,
+      description,
+      status = 'open',
+      priority = 'medium',
+      tenant_name,
+      unit,
+      notes,
+      estimated_cost,
+      actual_cost
+    } = req.body;
+
+    const result = await db.query(`
+      INSERT INTO maintenance_tickets (
+        title, description, status, priority, tenant_name, unit, 
+        notes, estimated_cost, actual_cost
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      RETURNING *
+    `, [title, description, status, priority, tenant_name, unit, notes, estimated_cost, actual_cost]);
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error creating maintenance ticket:', error);
+    res.status(500).json({ error: 'Failed to create maintenance ticket' });
+  }
+});
+
+app.put('/api/maintenance-tickets/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      title,
+      description,
+      status,
+      priority,
+      tenant_name,
+      unit,
+      notes,
+      estimated_cost,
+      actual_cost
+    } = req.body;
+
+    // If status is being changed to completed, set completed_at
+    const completedAt = status === 'completed' ? 'NOW()' : 'completed_at';
+
+    const result = await db.query(`
+      UPDATE maintenance_tickets 
+      SET 
+        title = COALESCE($1, title),
+        description = COALESCE($2, description),
+        status = COALESCE($3, status),
+        priority = COALESCE($4, priority),
+        tenant_name = COALESCE($5, tenant_name),
+        unit = COALESCE($6, unit),
+        notes = COALESCE($7, notes),
+        estimated_cost = COALESCE($8, estimated_cost),
+        actual_cost = COALESCE($9, actual_cost),
+        completed_at = CASE WHEN $3 = 'completed' THEN NOW() ELSE completed_at END,
+        updated_at = NOW()
+      WHERE id = $10
+      RETURNING *
+    `, [title, description, status, priority, tenant_name, unit, notes, estimated_cost, actual_cost, id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('Error updating maintenance ticket:', error);
+    res.status(500).json({ error: 'Failed to update maintenance ticket' });
+  }
+});
+
+app.delete('/api/maintenance-tickets/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await db.query('DELETE FROM maintenance_tickets WHERE id = $1 RETURNING id', [id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Ticket not found' });
+    }
+    
+    res.json({ message: 'Ticket deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting maintenance ticket:', error);
+    res.status(500).json({ error: 'Failed to delete maintenance ticket' });
+  }
+});
+
+// Create standalone income record
+app.post('/api/income', async (req, res) => {
+  try {
+    const { date, amount, income_type, description } = req.body;
+    
+    if (!date || !amount || !income_type) {
+      return res.status(400).json({ error: 'Date, amount, and income_type are required' });
+    }
+    
+    const result = await db.query(`
+      INSERT INTO income (
+        date,
+        amount,
+        income_type,
+        description,
+        created_at,
+        updated_at
+      ) VALUES (
+        $1, $2, $3, $4, NOW(), NOW()
+      ) RETURNING *
+    `, [date, amount, income_type, description || '']);
+    
+    res.json({
+      success: true,
+      message: 'Income record created successfully',
+      data: result.rows[0]
+    });
+  } catch (error) {
+    console.error('Error creating income record:', error);
+    res.status(500).json({ error: 'Failed to create income record' });
   }
 });
 

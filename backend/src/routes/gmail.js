@@ -178,4 +178,82 @@ router.post('/sync-all', asyncHandler(async (req, res) => {
   });
 }));
 
+// Mark email as refund
+router.post('/refund/:id', asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const db = require('../db/connection');
+  
+  if (!id) {
+    return sendError(res, 'Email ID is required', 400);
+  }
+  
+  // Get the email details
+  const email = await db.getOne(`
+    SELECT * FROM venmo_emails WHERE id = $1
+  `, [id]);
+  
+  if (!email) {
+    return sendError(res, 'Email not found', 404);
+  }
+  
+  // Create an income record for the refund
+  const incomeResult = await db.query(`
+    INSERT INTO income (
+      date,
+      amount,
+      income_type,
+      description,
+      created_at,
+      updated_at
+    ) VALUES (
+      $1, $2, $3, $4, NOW(), NOW()
+    ) RETURNING *
+  `, [
+    email.received_date,
+    email.venmo_amount,
+    'refund',
+    `Refund from ${email.venmo_actor}: ${email.venmo_note || 'No note'}`,
+  ]);
+  
+  // Mark the email as matched
+  await db.query(`
+    UPDATE venmo_emails 
+    SET 
+      matched = true,
+      manual_review_needed = false,
+      updated_at = NOW()
+    WHERE id = $1
+  `, [id]);
+  
+  sendSuccess(res, incomeResult.rows[0], 'Marked as refund successfully');
+}));
+
+// Flag email for review
+router.post('/flag/:id', asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { reason } = req.body;
+  const db = require('../db/connection');
+  
+  if (!id) {
+    return sendError(res, 'Email ID is required', 400);
+  }
+  
+  // Update the email to flag it for review
+  const result = await db.query(`
+    UPDATE venmo_emails 
+    SET 
+      manual_review_needed = true,
+      review_reason = $2,
+      updated_at = NOW()
+    WHERE id = $1
+    RETURNING *
+  `, [id, reason || 'Flagged for manual review']);
+  
+  if (result.rowCount === 0) {
+    return sendError(res, 'Email not found', 404);
+  }
+  
+  sendSuccess(res, result.rows[0], 'Email flagged for review');
+}));
+
 module.exports = router;

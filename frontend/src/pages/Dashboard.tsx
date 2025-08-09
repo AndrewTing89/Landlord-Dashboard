@@ -453,10 +453,10 @@ export default function Dashboard() {
               <Box display="flex" alignItems="center" justifyContent="space-between">
                 <Box>
                   <Typography color="textSecondary" gutterBottom variant="body2">
-                    Expected Rent
+                    Rent Collected
                   </Typography>
                   <Typography variant="h6">
-                    {ytdTotals ? formatCurrency(ytdTotals.expectedRentIncome) : '$0'}
+                    {ytdTotals ? formatCurrency(ytdTotals.actualRentIncome) : '$0'}
                   </Typography>
                 </Box>
                 <AttachMoneyIcon color="primary" fontSize="large" />

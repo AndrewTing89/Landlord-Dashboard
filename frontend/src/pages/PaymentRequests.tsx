@@ -42,6 +42,7 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
+  Stack,
 } from '@mui/material';
 import {
   ContentCopy as CopyIcon,
@@ -59,6 +60,8 @@ import {
   Timeline as TimelineIcon,
   Close as CloseIcon,
   List as ListIcon,
+  VisibilityOff as VisibilityOffIcon,
+  Link as LinkIcon,
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { apiService } from '../services/api';
@@ -130,6 +133,10 @@ export default function PaymentRequests() {
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [timelineDrawerOpen, setTimelineDrawerOpen] = useState(false);
   const [selectedTimelineRequest, setSelectedTimelineRequest] = useState<PaymentRequest | null>(null);
+  const [matchDialogOpen, setMatchDialogOpen] = useState(false);
+  const [selectedUnmatchedEmail, setSelectedUnmatchedEmail] = useState<VenmoEmail | null>(null);
+  const [selectedMatchRequest, setSelectedMatchRequest] = useState<number | null>(null);
+  const [processingAction, setProcessingAction] = useState<number | null>(null);
   
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -224,6 +231,57 @@ export default function PaymentRequests() {
       }
     } finally {
       setCheckingEmails(false);
+    }
+  };
+
+  // Handlers for unmatched payment actions
+  const handleIgnoreEmail = async (emailId: number) => {
+    try {
+      setProcessingAction(emailId);
+      const response = await axios.post(`${config.api.baseURL}/api/gmail/ignore/${emailId}`);
+      if (response.data.success) {
+        // Remove from unmatched list
+        setUnmatchedEmails(prev => prev.filter(e => e.id !== emailId));
+        // Show success message
+        alert('Email marked as ignored');
+      }
+    } catch (err) {
+      console.error('Error ignoring email:', err);
+      alert('Failed to ignore email');
+    } finally {
+      setProcessingAction(null);
+    }
+  };
+
+  const handleOpenMatchDialog = (email: VenmoEmail) => {
+    setSelectedUnmatchedEmail(email);
+    setSelectedMatchRequest(null);
+    setMatchDialogOpen(true);
+  };
+
+  const handleManualMatch = async () => {
+    if (!selectedUnmatchedEmail || !selectedMatchRequest) return;
+    
+    try {
+      setProcessingAction(selectedUnmatchedEmail.id);
+      const response = await axios.post(`${config.api.baseURL}/api/gmail/match`, {
+        emailId: selectedUnmatchedEmail.id,
+        paymentRequestId: selectedMatchRequest
+      });
+      
+      if (response.data.success) {
+        // Remove from unmatched list
+        setUnmatchedEmails(prev => prev.filter(e => e.id !== selectedUnmatchedEmail.id));
+        // Refresh payment requests to show the match
+        await fetchAllData();
+        setMatchDialogOpen(false);
+        alert('Payment matched successfully');
+      }
+    } catch (err) {
+      console.error('Error matching payment:', err);
+      alert('Failed to match payment');
+    } finally {
+      setProcessingAction(null);
     }
   };
 
@@ -979,13 +1037,27 @@ export default function PaymentRequests() {
                   Unmatched Venmo Payments ({unmatchedEmails.length})
                 </Typography>
                 <Typography variant="body2" color="textSecondary" paragraph>
-                  These payments couldn't be automatically matched to a request. Review and match manually if needed.
+                  These payments couldn't be automatically matched to a request. Choose an action for each payment:
                 </Typography>
                 <List>
                   {unmatchedEmails.map((email) => (
                     <ListItem key={email.id} divider>
                       <ListItemText
-                        primary={`${email.venmo_actor} - $${email.venmo_amount}`}
+                        primary={
+                          <Box display="flex" alignItems="center" gap={1}>
+                            <Typography variant="subtitle1">
+                              {email.venmo_actor} - ${email.venmo_amount}
+                            </Typography>
+                            {(email as any).flagged && (
+                              <Chip
+                                icon={<FlagIcon />}
+                                label="Flagged"
+                                size="small"
+                                color="warning"
+                              />
+                            )}
+                          </Box>
+                        }
                         secondary={
                           <>
                             {format(new Date(email.received_date), 'MMM d, yyyy h:mm a')}
@@ -997,6 +1069,27 @@ export default function PaymentRequests() {
                           </>
                         }
                       />
+                      <Box display="flex" gap={1} flexWrap="wrap">
+                        <Button
+                          size="small"
+                          variant="contained"
+                          color="primary"
+                          startIcon={<LinkIcon />}
+                          onClick={() => handleOpenMatchDialog(email)}
+                          disabled={processingAction === email.id}
+                        >
+                          Match
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          startIcon={<VisibilityOffIcon />}
+                          onClick={() => handleIgnoreEmail(email.id)}
+                          disabled={processingAction === email.id}
+                        >
+                          Ignore
+                        </Button>
+                      </Box>
                     </ListItem>
                   ))}
                 </List>
@@ -1418,6 +1511,52 @@ export default function PaymentRequests() {
               Mark as Paid
             </Button>
           )}
+        </DialogActions>
+      </Dialog>
+
+      {/* Manual Match Dialog */}
+      <Dialog open={matchDialogOpen} onClose={() => setMatchDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Match Payment to Request</DialogTitle>
+        <DialogContent>
+          {selectedUnmatchedEmail && (
+            <>
+              <Typography variant="body2" gutterBottom>
+                Match payment from <strong>{selectedUnmatchedEmail.venmo_actor}</strong> for <strong>${selectedUnmatchedEmail.venmo_amount}</strong>
+              </Typography>
+              {selectedUnmatchedEmail.venmo_note && (
+                <Typography variant="caption" color="textSecondary" display="block" gutterBottom>
+                  Note: {selectedUnmatchedEmail.venmo_note}
+                </Typography>
+              )}
+              <FormControl fullWidth sx={{ mt: 2 }}>
+                <InputLabel>Select Payment Request</InputLabel>
+                <Select
+                  value={selectedMatchRequest || ''}
+                  onChange={(e) => setSelectedMatchRequest(Number(e.target.value))}
+                  label="Select Payment Request"
+                >
+                  {paymentRequests
+                    .filter(r => r.status !== 'paid')
+                    .map(request => (
+                      <MenuItem key={request.id} value={request.id}>
+                        {request.roommate_name} - ${request.amount} - {request.bill_type} ({request.month}/{request.year})
+                      </MenuItem>
+                    ))}
+                </Select>
+              </FormControl>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setMatchDialogOpen(false)}>Cancel</Button>
+          <Button 
+            onClick={handleManualMatch} 
+            variant="contained" 
+            color="primary"
+            disabled={!selectedMatchRequest || processingAction !== null}
+          >
+            Match Payment
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

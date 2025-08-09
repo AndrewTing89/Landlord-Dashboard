@@ -7,7 +7,7 @@ import Transactions from './pages/Transactions';
 import PaymentRequests from './pages/PaymentRequests';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
-import Trends from './pages/Trends';
+import MaintenanceTickets from './pages/MaintenanceTickets';
 import Review from './pages/Review';
 import SyncManagement from './pages/SyncManagement';
 import PaymentTrackingSimpleCards from './pages/PaymentTrackingSimpleCards';
@@ -26,8 +26,8 @@ function App() {
           <Route path="review" element={<Review />} />
           <Route path="payment-tracking" element={<PaymentTrackingSimpleCards />} />
           <Route path="payments" element={<PaymentRequests />} />
+          <Route path="maintenance" element={<MaintenanceTickets />} />
           <Route path="reports" element={<Reports />} />
-          <Route path="trends" element={<Trends />} />
           <Route path="sync" element={<SyncManagement />} />
           <Route path="email-sync" element={<EmailSyncManagement />} />
           <Route path="health" element={<HealthCheck />} />

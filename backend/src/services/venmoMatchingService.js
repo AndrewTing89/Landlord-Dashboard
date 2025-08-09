@@ -367,53 +367,36 @@ class VenmoMatchingService {
    * Create recuperation transaction for roommate payment
    */
   async createRecuperationTransaction(paymentRequest, emailRecord) {
-    // Create a recuperation transaction (negative amount = income)
-    const recuperationTx = await db.query(`
+    // Create a utility reimbursement income record
+    const incomeResult = await db.query(`
       INSERT INTO income (
-        plaid_id,
-        account_id,
-        amount,
         date,
-        name,
-        merchant_name,
+        amount,
+        description,
+        income_type,
         category,
-        subcategory,
-        expense_type
+        source_type,
+        payment_request_id,
+        payer_name,
+        notes,
+        created_at,
+        updated_at
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW()
       ) RETURNING id
     `, [
-      `venmo_recuperation_${paymentRequest.id}_${Date.now()}`,
-      'manual_entry',
-      -emailRecord.venmo_amount, // Negative for income
       emailRecord.received_date,
-      `Utility Recuperation - ${emailRecord.venmo_actor}`,
-      'Venmo',
-      'Transfer',
-      'Roommate Payment',
-      'utility_recuperation'
-    ]);
-    
-    // Create utility adjustment record
-    await db.query(`
-      INSERT INTO utility_adjustments (
-        transaction_id,
-        payment_request_id,
-        adjustment_amount,
-        adjustment_type,
-        description,
-        applied_date
-      ) VALUES ($1, $2, $3, $4, $5, $6)
-    `, [
-      recuperationTx.rows[0].id,
+      emailRecord.venmo_amount, // Positive for income
+      `Utility Reimbursement - ${paymentRequest.bill_type} - ${this.getMonthName(paymentRequest.month)} ${paymentRequest.year}`,
+      'utility_reimbursement',
+      paymentRequest.bill_type,
+      'payment_request',
       paymentRequest.id,
-      emailRecord.venmo_amount,
-      'reimbursement',
-      `Venmo payment from ${emailRecord.venmo_actor} - ${emailRecord.venmo_note || 'No note'}`,
-      emailRecord.received_date
+      emailRecord.venmo_actor,
+      `Auto-matched from Venmo email: ${emailRecord.venmo_note || 'No note'}`
     ]);
     
-    console.log(`💰 Created recuperation transaction for $${emailRecord.venmo_amount}`);
+    console.log(`💰 Created utility reimbursement income record for $${emailRecord.venmo_amount}`);
   }
 
   /**
