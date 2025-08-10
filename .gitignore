@@ -96,3 +96,7 @@ DATA_ENGINEERING*.md
 "CLAUDE 2.md"
 PORTS.md
 docs/TENANT_PORTAL*.md
+
+# Backup folders
+deployment-backup-*/
+*backup*/
