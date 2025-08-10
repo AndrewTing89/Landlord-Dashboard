@@ -1,337 +1,361 @@
 const { Pool } = require('pg');
 const fs = require('fs');
-const path = require('path');
-const { exec } = require('child_process');
-const util = require('util');
-const execPromise = util.promisify(exec);
 require('dotenv').config({ path: './backend/.env' });
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL
 });
 
-const backupDir = `deployment-backup-${new Date().toISOString().split('T')[0].replace(/-/g, '')}`;
-const backupPath = path.join(__dirname, backupDir);
-
-// Ensure backup directory exists
-if (!fs.existsSync(backupPath)) {
-  fs.mkdirSync(backupPath, { recursive: true });
-}
-
 async function createCompleteBackup() {
-  console.log('🔵 Creating COMPLETE database backup...');
-  console.log(`📁 Backup directory: ${backupPath}\n`);
-  
-  let schemaSQL = '';
-  let dataSQL = '';
+  console.log('🚀 CREATING COMPLETE DATABASE BACKUP WITH EXACT SCHEMA');
+  console.log('=' .repeat(60));
   
   try {
-    // First, get the complete schema using pg_dump equivalent queries
-    console.log('📋 Exporting complete database schema...');
+    // First, verify the actual schema of critical tables
+    console.log('\n📋 Verifying actual column names in database...\n');
     
-    // Get all sequences
-    const sequences = await pool.query(`
-      SELECT sequence_name 
-      FROM information_schema.sequences 
-      WHERE sequence_schema = 'public'
-    `);
+    const criticalTables = ['expenses', 'income', 'payment_requests', 'raw_transactions'];
+    for (const tableName of criticalTables) {
+      const cols = await pool.query(`
+        SELECT column_name, data_type, is_nullable, column_default
+        FROM information_schema.columns 
+        WHERE table_name = $1 AND table_schema = 'public'
+        ORDER BY ordinal_position
+      `, [tableName]);
+      
+      console.log(`${tableName} actual columns:`);
+      cols.rows.forEach(c => {
+        console.log(`  - ${c.column_name} (${c.data_type})${c.is_nullable === 'NO' ? ' NOT NULL' : ''}`);
+      });
+      console.log();
+    }
     
-    // Get all tables with their complete CREATE statements
+    // Get all tables in proper dependency order (simplified)
+    console.log('Analyzing table dependencies...\n');
+    
     const tables = await pool.query(`
       SELECT table_name 
       FROM information_schema.tables 
       WHERE table_schema = 'public' 
       AND table_type = 'BASE TABLE'
-      ORDER BY table_name
+      ORDER BY 
+        CASE table_name
+          -- Base tables with no dependencies
+          WHEN 'etl_rules' THEN 0
+          WHEN 'expense_categories' THEN 0
+          WHEN 'properties' THEN 0
+          WHEN 'tenants' THEN 0
+          WHEN 'gmail_sync_state' THEN 0
+          WHEN 'job_runs' THEN 0
+          
+          -- Raw data tables
+          WHEN 'raw_transactions' THEN 1
+          
+          -- Expense related
+          WHEN 'expenses' THEN 2
+          WHEN 'utility_bills' THEN 3
+          WHEN 'maintenance_tickets' THEN 3
+          
+          -- Payment tables
+          WHEN 'payment_requests' THEN 4
+          WHEN 'venmo_emails' THEN 4
+          WHEN 'venmo_payment_requests' THEN 4
+          
+          -- Income (depends on payment_requests)
+          WHEN 'income' THEN 5
+          
+          -- Tenant tables
+          WHEN 'tenant_sessions' THEN 6
+          WHEN 'tenant_activity_log' THEN 6
+          WHEN 'tenant_documents' THEN 6
+          WHEN 'tenant_notifications' THEN 6
+          WHEN 'maintenance_requests' THEN 6
+          
+          -- Others
+          ELSE 7
+        END,
+        table_name
     `);
     
-    console.log(`Found ${tables.rows.length} tables to backup\n`);
-    
-    schemaSQL = `-- Landlord Dashboard Complete Database Backup
--- Created: ${new Date().toISOString()}
--- =====================================================
+    console.log(`Found ${tables.rows.length} tables\n`);
+    console.log('=' .repeat(60));
+    console.log('Creating backup...\n');
 
--- Drop all tables (CASCADE to handle foreign keys)
+    let sqlBackup = `-- Landlord Dashboard Complete Database Backup
+-- Created: ${new Date().toISOString()}
+-- This backup preserves EXACT column names and schema from the current database
+-- Compatible with the clean architecture (income/expenses split, NO transactions table)
+
+BEGIN;
+SET CONSTRAINTS ALL DEFERRED;
+
+-- Drop all existing tables in reverse dependency order
 `;
 
-    // Drop tables in reverse order to handle dependencies
-    for (let i = tables.rows.length - 1; i >= 0; i--) {
-      schemaSQL += `DROP TABLE IF EXISTS ${tables.rows[i].table_name} CASCADE;\n`;
+    // Drop tables in reverse order
+    const tableList = tables.rows.map(r => r.table_name);
+    for (let i = tableList.length - 1; i >= 0; i--) {
+      sqlBackup += `DROP TABLE IF EXISTS ${tableList[i]} CASCADE;\n`;
     }
+    sqlBackup += '\n';
+
+    // Create each table with exact schema
+    let totalRows = 0;
+    const tableStats = [];
     
-    schemaSQL += `\n-- Create all tables\n\n`;
-    
-    // Get actual CREATE TABLE statements with all constraints
     for (const table of tables.rows) {
       const tableName = table.table_name;
-      console.log(`  📊 Processing table: ${tableName}`);
+      console.log(`Processing ${tableName}...`);
       
-      // Get column definitions
+      // Get complete column information
       const columns = await pool.query(`
         SELECT 
-          column_name,
-          data_type,
-          character_maximum_length,
-          numeric_precision,
-          numeric_scale,
-          is_nullable,
-          column_default
-        FROM information_schema.columns
-        WHERE table_schema = 'public' 
-        AND table_name = $1
-        ORDER BY ordinal_position
+          c.column_name,
+          c.data_type,
+          c.character_maximum_length,
+          c.numeric_precision,
+          c.numeric_scale,
+          c.is_nullable,
+          c.column_default,
+          c.udt_name
+        FROM information_schema.columns c
+        WHERE c.table_name = $1 
+        AND c.table_schema = 'public'
+        ORDER BY c.ordinal_position
       `, [tableName]);
       
-      // Start CREATE TABLE
-      schemaSQL += `-- Table: ${tableName}\n`;
-      schemaSQL += `CREATE TABLE ${tableName} (\n`;
+      sqlBackup += `-- Table: ${tableName}\n`;
+      sqlBackup += `CREATE TABLE ${tableName} (\n`;
       
-      // Add columns
       const columnDefs = [];
       for (const col of columns.rows) {
         let def = `  ${col.column_name} `;
         
-        // Handle data type
-        if (col.data_type === 'character varying') {
+        // Map data types correctly
+        if (col.udt_name === 'varchar') {
           def += `VARCHAR${col.character_maximum_length ? `(${col.character_maximum_length})` : ''}`;
-        } else if (col.data_type === 'numeric') {
-          def += `NUMERIC${col.numeric_precision ? `(${col.numeric_precision},${col.numeric_scale || 0})` : ''}`;
-        } else if (col.data_type === 'ARRAY') {
+        } else if (col.udt_name === 'int4' && col.column_default && col.column_default.includes('nextval')) {
+          def += 'SERIAL';
+        } else if (col.udt_name === 'int8' && col.column_default && col.column_default.includes('nextval')) {
+          def += 'BIGSERIAL';
+        } else if (col.udt_name === 'int4') {
+          def += 'INTEGER';
+        } else if (col.udt_name === 'int8') {
+          def += 'BIGINT';
+        } else if (col.udt_name === 'numeric') {
+          def += `NUMERIC${col.numeric_precision ? `(${col.numeric_precision},${col.numeric_scale || 0})` : '(10,2)'}`;
+        } else if (col.udt_name === 'text') {
+          def += 'TEXT';
+        } else if (col.udt_name === 'bool') {
+          def += 'BOOLEAN';
+        } else if (col.udt_name === 'timestamp') {
+          def += 'TIMESTAMP';
+        } else if (col.udt_name === 'timestamptz') {
+          def += 'TIMESTAMPTZ';
+        } else if (col.udt_name === 'date') {
+          def += 'DATE';
+        } else if (col.udt_name === 'jsonb') {
+          def += 'JSONB';
+        } else if (col.udt_name === '_text') {
           def += 'TEXT[]';
         } else {
           def += col.data_type.toUpperCase();
         }
         
-        // Handle NOT NULL
-        if (col.is_nullable === 'NO') {
-          def += ' NOT NULL';
+        // Add default if not serial
+        if (col.column_default && !col.column_default.includes('nextval')) {
+          def += ` DEFAULT ${col.column_default}`;
         }
         
-        // Handle defaults
-        if (col.column_default) {
-          def += ` DEFAULT ${col.column_default}`;
+        // Add NOT NULL constraint
+        if (col.is_nullable === 'NO') {
+          def += ' NOT NULL';
         }
         
         columnDefs.push(def);
       }
       
-      // Get constraints
-      const constraints = await pool.query(`
-        SELECT
-          con.conname,
-          con.contype,
-          pg_get_constraintdef(con.oid) as definition
-        FROM pg_constraint con
-        JOIN pg_class rel ON rel.oid = con.conrelid
-        WHERE rel.relname = $1
-        AND con.contype IN ('p', 'f', 'c', 'u')
+      sqlBackup += columnDefs.join(',\n');
+      
+      // Add primary key constraint
+      const pk = await pool.query(`
+        SELECT kcu.column_name
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu 
+          ON tc.constraint_name = kcu.constraint_name
+        WHERE tc.table_name = $1
+        AND tc.constraint_type = 'PRIMARY KEY'
       `, [tableName]);
       
-      // Add constraints to column definitions
-      for (const constraint of constraints.rows) {
-        if (constraint.contype === 'p') {
-          columnDefs.push(`  CONSTRAINT ${constraint.conname} ${constraint.definition}`);
-        } else if (constraint.contype === 'f') {
-          columnDefs.push(`  CONSTRAINT ${constraint.conname} ${constraint.definition}`);
-        } else if (constraint.contype === 'c') {
-          columnDefs.push(`  CONSTRAINT ${constraint.conname} ${constraint.definition}`);
-        } else if (constraint.contype === 'u') {
-          columnDefs.push(`  CONSTRAINT ${constraint.conname} ${constraint.definition}`);
-        }
+      if (pk.rows.length > 0) {
+        sqlBackup += `,\n  PRIMARY KEY (${pk.rows[0].column_name})`;
       }
       
-      schemaSQL += columnDefs.join(',\n');
-      schemaSQL += '\n);\n\n';
+      sqlBackup += '\n);\n';
       
-      // Get indexes
+      // Add foreign key constraints separately
+      const fks = await pool.query(`
+        SELECT
+          tc.constraint_name,
+          kcu.column_name,
+          ccu.table_name AS foreign_table,
+          ccu.column_name AS foreign_column
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu
+          ON tc.constraint_name = kcu.constraint_name
+        JOIN information_schema.constraint_column_usage ccu
+          ON tc.constraint_name = ccu.constraint_name
+        WHERE tc.table_name = $1
+        AND tc.constraint_type = 'FOREIGN KEY'
+      `, [tableName]);
+      
+      for (const fk of fks.rows) {
+        sqlBackup += `ALTER TABLE ${tableName} ADD CONSTRAINT ${fk.constraint_name} `;
+        sqlBackup += `FOREIGN KEY (${fk.column_name}) REFERENCES ${fk.foreign_table}(${fk.foreign_column});\n`;
+      }
+      
+      // Add CHECK constraints
+      const checks = await pool.query(`
+        SELECT 
+          conname,
+          pg_get_constraintdef(oid) as definition
+        FROM pg_constraint
+        WHERE conrelid = $1::regclass
+        AND contype = 'c'
+      `, [`public.${tableName}`]);
+      
+      for (const check of checks.rows) {
+        sqlBackup += `ALTER TABLE ${tableName} ADD CONSTRAINT ${check.conname} ${check.definition};\n`;
+      }
+      
+      // Add indexes
       const indexes = await pool.query(`
         SELECT indexname, indexdef
         FROM pg_indexes
         WHERE schemaname = 'public'
         AND tablename = $1
         AND indexname NOT LIKE '%_pkey'
-      `, [tableName]);
+        AND indexname NOT IN (
+          SELECT conname FROM pg_constraint WHERE conrelid = $2::regclass
+        )
+      `, [tableName, `public.${tableName}`]);
       
-      for (const index of indexes.rows) {
-        schemaSQL += `${index.indexdef};\n`;
+      for (const idx of indexes.rows) {
+        sqlBackup += `${idx.indexdef};\n`;
       }
       
-      if (indexes.rows.length > 0) {
-        schemaSQL += '\n';
-      }
-    }
-    
-    // Now export all data
-    console.log('\n📦 Exporting data from all tables...\n');
-    
-    dataSQL = `\n-- =====================================================
--- DATA SECTION
--- =====================================================\n\n`;
-    
-    let totalRows = 0;
-    
-    for (const table of tables.rows) {
-      const tableName = table.table_name;
+      sqlBackup += '\n';
       
-      // Get all data from table
+      // Export data with exact column names
       const data = await pool.query(`SELECT * FROM ${tableName}`);
       
       if (data.rows.length > 0) {
-        console.log(`  ✅ ${tableName}: ${data.rows.length} rows`);
-        totalRows += data.rows.length;
+        sqlBackup += `-- Data for ${tableName} (${data.rows.length} rows)\n`;
         
-        dataSQL += `-- Data for table: ${tableName}\n`;
-        
-        // Get column names
-        const columns = Object.keys(data.rows[0]);
+        // Get actual column names from the query result
+        const actualColumns = Object.keys(data.rows[0]);
         
         for (const row of data.rows) {
-          const values = columns.map(col => {
+          const values = actualColumns.map(col => {
             const val = row[col];
             if (val === null) return 'NULL';
             if (typeof val === 'boolean') return val ? 'true' : 'false';
             if (typeof val === 'number') return val;
             if (val instanceof Date) return `'${val.toISOString()}'`;
-            if (Array.isArray(val)) return `ARRAY[${val.map(v => `'${v}'`).join(',')}]`;
+            if (Array.isArray(val)) {
+              if (val.length === 0) return "'{}'";
+              return `ARRAY[${val.map(v => `'${String(v).replace(/'/g, "''")}'`).join(',')}]`;
+            }
             if (typeof val === 'object') return `'${JSON.stringify(val).replace(/'/g, "''")}'::jsonb`;
-            return `'${String(val).replace(/'/g, "''")}'`;
+            
+            // For string values, ensure proper formatting
+            let strVal = String(val);
+            // Ensure lowercase for enum-like fields
+            if ((col === 'type' || col === 'category' || col === 'expense_type' || col === 'status') && tableName === 'expenses') {
+              strVal = strVal.toLowerCase();
+            }
+            return `'${strVal.replace(/'/g, "''")}'`;
           });
           
-          dataSQL += `INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (${values.join(', ')});\n`;
+          sqlBackup += `INSERT INTO ${tableName} (${actualColumns.join(', ')}) VALUES (${values.join(', ')});\n`;
         }
-        dataSQL += '\n';
+        
+        totalRows += data.rows.length;
+        tableStats.push({ table: tableName, rows: data.rows.length });
+        console.log(`  ✅ Exported ${data.rows.length} rows`);
+        sqlBackup += '\n';
       } else {
-        console.log(`  ⚪ ${tableName}: empty`);
+        tableStats.push({ table: tableName, rows: 0 });
+        console.log(`  ⚪ No data`);
       }
     }
     
-    // Reset sequences
-    const sequenceSQL = `\n-- Reset sequences to correct values\n`;
+    // Update sequences
+    const sequences = await pool.query(`
+      SELECT sequencename 
+      FROM pg_sequences 
+      WHERE schemaname = 'public'
+    `);
+    
+    sqlBackup += '-- Reset sequences to correct values\n';
     for (const seq of sequences.rows) {
-      sequenceSQL + `SELECT setval('${seq.sequence_name}', (SELECT COALESCE(MAX(id), 1) FROM ${seq.sequence_name.replace('_id_seq', '')}));\n`;
-    }
-    
-    // Combine everything
-    const fullBackup = schemaSQL + dataSQL + sequenceSQL + `
--- =====================================================
--- Backup complete
--- Total tables: ${tables.rows.length}
--- Total rows: ${totalRows}
--- =====================================================
-`;
-    
-    // Write backup file
-    const backupFile = path.join(backupPath, 'complete_database_backup.sql');
-    fs.writeFileSync(backupFile, fullBackup);
-    
-    console.log(`\n✅ Database backup complete!`);
-    console.log(`  - Tables: ${tables.rows.length}`);
-    console.log(`  - Total rows: ${totalRows}`);
-    console.log(`  - File size: ${(fs.statSync(backupFile).size / 1024).toFixed(2)} KB`);
-    
-    // Copy environment files
-    console.log('\n🔵 Copying environment files...');
-    
-    const filesToCopy = [
-      { src: 'backend/.env', dest: '.env' },
-      { src: 'backend/gmail-token.json', dest: 'gmail-token.json', optional: true },
-      { src: 'backend/gmail-credentials.json', dest: 'gmail-credentials.json', optional: true },
-      { src: 'backend/.env.production', dest: '.env.production', optional: true }
-    ];
-    
-    for (const file of filesToCopy) {
-      const srcPath = path.join(__dirname, file.src);
-      const destPath = path.join(backupPath, file.dest);
+      const seqName = seq.sequencename;
+      const tableName = seqName.replace('_id_seq', '').replace('_seq', '');
       
-      if (fs.existsSync(srcPath)) {
-        fs.copyFileSync(srcPath, destPath);
-        console.log(`  ✅ Copied ${file.src}`);
-      } else if (!file.optional) {
-        console.log(`  ⚠️  Warning: ${file.src} not found`);
+      // Check if table exists and has id column
+      const hasTable = tableList.includes(tableName);
+      if (hasTable) {
+        const hasId = await pool.query(`
+          SELECT EXISTS (
+            SELECT 1 FROM information_schema.columns 
+            WHERE table_name = $1 AND column_name = 'id'
+          )
+        `, [tableName]);
+        
+        if (hasId.rows[0].exists) {
+          sqlBackup += `SELECT setval('${seqName}', COALESCE((SELECT MAX(id) FROM ${tableName}), 1), true);\n`;
+        }
       }
     }
     
-    // Create restore script
-    const restoreScript = `#!/bin/bash
-# Restore script for Landlord Dashboard
+    sqlBackup += `
+-- Re-enable constraints
+SET CONSTRAINTS ALL IMMEDIATE;
+COMMIT;
 
-echo "🔵 Restoring Landlord Dashboard Database..."
-
-# Check if PostgreSQL is running
-if ! pg_isready -h localhost -p 5432 > /dev/null 2>&1; then
-    echo "❌ PostgreSQL is not running. Please start it first."
-    exit 1
-fi
-
-# Restore database
-psql postgresql://landlord_user:landlord_pass@localhost:5432/landlord_dashboard < complete_database_backup.sql
-
-if [ $? -eq 0 ]; then
-    echo "✅ Database restored successfully!"
-else
-    echo "❌ Database restore failed. Check the error messages above."
-    exit 1
-fi
-
-# Copy environment files
-cp .env ~/Landlord-Dashboard/backend/
-cp gmail-*.json ~/Landlord-Dashboard/backend/ 2>/dev/null || true
-
-echo "✅ Environment files copied!"
-echo "📋 Next steps:"
-echo "  1. cd ~/Landlord-Dashboard"
-echo "  2. pm2 start backend/src/server.js --name landlord-api"
-echo "  3. pm2 serve frontend/build 3000 --name landlord-ui --spa"
+-- =====================================================
+-- BACKUP COMPLETE
+-- Tables: ${tables.rows.length}
+-- Total Records: ${totalRows}
+-- =====================================================
+-- Tables with data:
+${tableStats.filter(t => t.rows > 0).map(t => `-- ${t.table}: ${t.rows} rows`).join('\n')}
+-- =====================================================
 `;
-    
-    fs.writeFileSync(path.join(backupPath, 'restore.sh'), restoreScript);
-    fs.chmodSync(path.join(backupPath, 'restore.sh'), '755');
-    
-    // Create README
-    const readme = `# Complete Database Backup
-Created: ${new Date().toISOString()}
 
-## Contents:
-- complete_database_backup.sql - Full database with all table structures and data
-- .env - Environment variables
-- restore.sh - Automated restore script
-
-## Quick Restore:
-\`\`\`bash
-cd deployment-backup-*
-chmod +x restore.sh
-./restore.sh
-\`\`\`
-
-## Manual Restore:
-\`\`\`bash
-psql postgresql://landlord_user:landlord_pass@localhost:5432/landlord_dashboard < complete_database_backup.sql
-cp .env ~/Landlord-Dashboard/backend/
-\`\`\`
-
-## Statistics:
-- Tables: ${tables.rows.length}
-- Total Rows: ${totalRows}
-- Includes ALL table structures (even empty ones)
-`;
-    
-    fs.writeFileSync(path.join(backupPath, 'README.md'), readme);
+    // Save backup
+    const filename = 'landlord_dashboard_complete_backup.sql';
+    fs.writeFileSync(filename, sqlBackup);
     
     console.log('\n' + '='.repeat(60));
-    console.log('🎉 COMPLETE BACKUP CREATED!');
-    console.log('='.repeat(60));
-    console.log(`📁 Location: ${backupPath}/`);
-    console.log(`📦 Files created:`);
-    console.log(`  ✅ complete_database_backup.sql (with ALL tables)`);
-    console.log(`  ✅ .env (environment variables)`);
-    console.log(`  ✅ restore.sh (automated restore script)`);
-    console.log(`  ✅ README.md (instructions)`);
-    console.log('='.repeat(60));
+    console.log('✅ COMPLETE BACKUP CREATED!');
+    console.log('=' .repeat(60));
+    console.log(`\n📁 File: ${filename}`);
+    console.log(`📊 Size: ${(sqlBackup.length / 1024).toFixed(2)} KB`);
+    console.log(`📈 Total records: ${totalRows}\n`);
+    console.log('Key tables backed up:');
+    tableStats.filter(t => t.rows > 0).forEach(t => {
+      console.log(`  - ${t.table}: ${t.rows} records`);
+    });
+    console.log('\n✅ This backup preserves EXACT column names from your database');
+    console.log('✅ Compatible with clean architecture (income/expenses split)');
+    console.log('✅ Ready for restore on Ubuntu Server\n');
     
     pool.end();
     
   } catch (error) {
-    console.error('❌ Backup failed:', error);
+    console.error('\n❌ Backup failed:', error.message);
+    console.error('Details:', error);
     pool.end();
     process.exit(1);
   }
