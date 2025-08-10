@@ -97,6 +97,11 @@ DATA_ENGINEERING*.md
 PORTS.md
 docs/TENANT_PORTAL*.md
 
+# System files
+.DS_Store
+.Rhistory
+Thumbs.db
+
 # Backup folders and files
 deployment-backup-*/
 *backup*/
