@@ -155,19 +155,19 @@ class SimpleFINService {
 
     for (const transaction of transactions) {
       try {
-        // Check if transaction already exists in raw_transactions
+        // Check if transaction already exists using natural keys (cross-source duplicate detection)
+        const dateString = new Date(transaction.posted * 1000).toISOString().split('T')[0];
         const existing = await db.getOne(
-          `SELECT id FROM raw_transactions 
-           WHERE simplefin_id = $1`,
-          [transaction.id]
+          `SELECT id, simplefin_id FROM raw_transactions 
+           WHERE posted_date = $1 
+             AND amount = $2 
+             AND description = $3`,
+          [dateString, transaction.amount, transaction.description]
         );
 
         if (!existing) {
           // SimpleFIN provides amount as negative for debits
           const amount = Math.abs(transaction.amount);
-          
-          // Convert Unix timestamp to date string
-          const dateString = new Date(transaction.posted * 1000).toISOString().split('T')[0];
           
           // Auto-exclude positive amounts (deposits/income)
           // We track income through payment requests, not bank deposits
@@ -208,8 +208,8 @@ class SimpleFINService {
             console.log(`[Auto-Approve] ${transaction.description} -> ${suggestions.expense_type}`);
             
             const expense = await db.insert('expenses', {
-              plaid_transaction_id: `simplefin_${transaction.id}`,
-              plaid_account_id: accountId,
+              simplefin_transaction_id: `simplefin_${transaction.id}`,
+              simplefin_account_id: accountId,
               amount: amount,
               date: dateString,
               name: transaction.description,
@@ -219,15 +219,7 @@ class SimpleFINService {
               subcategory: null
             });
             
-            // Automatically create payment requests for utility bills
-            if (['electricity', 'water'].includes(suggestions.expense_type)) {
-              try {
-                await paymentRequestService.createUtilityPaymentRequests(expense);
-                console.log(`[Payment Requests] Created for ${suggestions.expense_type} bill`);
-              } catch (err) {
-                console.error('Error creating payment requests:', err);
-              }
-            }
+            // Payment requests are now created automatically by database trigger
           }
 
           savedCount++;
@@ -382,12 +374,12 @@ class SimpleFINService {
             result.exclude_reason = rule.exclude_reason || rule.rule_name;
             result.confidence = 1.0;
             break; // Stop processing if excluded
-          } else if (rule.action === 'categorize') {
+          } else if (rule.action === 'categorize' || rule.action === 'approve') {
             result.expense_type = rule.expense_type;
             result.merchant = rule.merchant_name;
             result.confidence = 0.9;
-            // High-priority utility bills are auto-approved
-            if (rule.priority >= 100) {
+            // Auto-approve if action is 'approve' or high-priority categorize
+            if (rule.action === 'approve' || rule.priority >= 100) {
               result.auto_approve = true;
             }
           }

@@ -99,8 +99,8 @@ router.post('/approve/:id', async (req, res) => {
       } else {
         // Expense (negative amounts) - insert into expenses table
         await db.insert('expenses', {
-          plaid_transaction_id: `simplefin_${rawTx.simplefin_id}`,
-          plaid_account_id: rawTx.simplefin_account_id,
+          simplefin_transaction_id: rawTx.simplefin_id ? `simplefin_${rawTx.simplefin_id}` : null,
+          simplefin_account_id: rawTx.simplefin_account_id,
           amount: Math.abs(rawTx.amount),
           date: rawTx.posted_date,
           name: rawTx.description,
@@ -119,23 +119,7 @@ router.post('/approve/:id', async (req, res) => {
       
       await db.query('COMMIT');
       
-      // Automatically create payment requests for utility bills
-      if (['electricity', 'water'].includes(expense_type)) {
-        try {
-          const expenseResult = await db.query(
-            'SELECT * FROM expenses WHERE plaid_transaction_id = $1',
-            [`simplefin_${rawTx.simplefin_id}`]
-          );
-          
-          if (expenseResult.rows.length > 0) {
-            await paymentRequestService.createUtilityPaymentRequests(expenseResult.rows[0]);
-            console.log(`Created payment requests for ${expense_type} bill`);
-          }
-        } catch (err) {
-          console.error('Error creating payment requests:', err);
-          // Don't fail the approval if payment request creation fails
-        }
-      }
+      // Payment requests are now created automatically by database trigger
       
       res.json({ 
         success: true, 
@@ -219,10 +203,10 @@ router.post('/bulk-approve', async (req, res) => {
           );
           
           if (rawTx) {
-            // Check if transaction already exists
+            // Check if transaction already exists using natural keys
             const existing = await db.getOne(
-              'SELECT id FROM expenses WHERE plaid_transaction_id = $1',
-              [`simplefin_${rawTx.simplefin_id}`]
+              'SELECT id FROM expenses WHERE date = $1 AND amount = $2 AND name = $3',
+              [rawTx.posted_date, Math.abs(rawTx.amount), rawTx.description]
             );
             
             if (existing) {
@@ -248,8 +232,8 @@ router.post('/bulk-approve', async (req, res) => {
               } else {
                 // Insert expense into expenses table
                 const newExpense = await db.insert('expenses', {
-                  plaid_transaction_id: `simplefin_${rawTx.simplefin_id}`,
-                  plaid_account_id: rawTx.simplefin_account_id,
+                  simplefin_transaction_id: rawTx.simplefin_id ? `simplefin_${rawTx.simplefin_id}` : null,
+                  simplefin_account_id: rawTx.simplefin_account_id,
                   amount: Math.abs(rawTx.amount),
                   date: rawTx.posted_date,
                   name: rawTx.description,

@@ -239,7 +239,7 @@ router.get('/confirmations', async (req, res) => {
 // Check and create rent payment request for current month
 router.post('/check-rent', async (req, res) => {
   try {
-    const { createRentPaymentRequest } = require('../scripts/create-rent-payment-request');
+    const { createRentPaymentRequest } = require('../../scripts/create-rent-payment-request');
     const currentDate = new Date();
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth() + 1;
@@ -268,6 +268,87 @@ router.post('/check-rent', async (req, res) => {
     }
   } catch (error) {
     console.error('Error checking/creating rent payment request:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Generate historical rent requests (for testing/backfill)
+router.post('/generate-historical-rent', async (req, res) => {
+  try {
+    const { createRentPaymentRequest } = require('../../scripts/create-rent-payment-request');
+    const currentDate = new Date();
+    const currentYear = currentDate.getFullYear();
+    const currentMonth = currentDate.getMonth() + 1;
+    const rentAmount = parseFloat(process.env.MONTHLY_RENT || 1685);
+    
+    console.log('🏠 Generating historical rent requests...');
+    
+    let created = 0;
+    let skipped = 0;
+    const results = [];
+    
+    // Generate requests from January 2025 to current month
+    for (let year = 2025; year <= currentYear; year++) {
+      const startMonth = (year === 2025) ? 1 : 1;
+      const endMonth = (year === currentYear) ? currentMonth : 12;
+      
+      for (let month = startMonth; month <= endMonth; month++) {
+        try {
+          const result = await createRentPaymentRequest(year, month, rentAmount);
+          
+          if (result.success) {
+            created++;
+            results.push({
+              year,
+              month,
+              status: 'created',
+              amount: rentAmount,
+              trackingId: result.request?.tracking_id
+            });
+          } else if (result.exists) {
+            skipped++;
+            results.push({
+              year,
+              month,
+              status: 'exists',
+              amount: rentAmount,
+              existing: result.request
+            });
+          } else {
+            results.push({
+              year,
+              month,
+              status: 'failed',
+              error: result.message
+            });
+          }
+        } catch (error) {
+          console.error(`Error creating rent request for ${month}/${year}:`, error);
+          results.push({
+            year,
+            month,
+            status: 'failed',
+            error: error.message
+          });
+        }
+      }
+    }
+    
+    console.log(`✅ Historical rent generation complete: ${created} created, ${skipped} skipped`);
+    
+    res.json({
+      success: true,
+      message: `Generated historical rent requests: ${created} created, ${skipped} already existed`,
+      summary: {
+        created,
+        skipped,
+        total: created + skipped
+      },
+      details: results
+    });
+    
+  } catch (error) {
+    console.error('Error generating historical rent requests:', error);
     res.status(500).json({ error: error.message });
   }
 });

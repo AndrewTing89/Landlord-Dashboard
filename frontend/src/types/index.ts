@@ -5,8 +5,8 @@ export * from './api';
 
 export interface Transaction {
   id: number;
-  plaid_transaction_id: string;
-  plaid_account_id: string;
+  simplefin_transaction_id: string;
+  simplefin_account_id: string;
   amount: number;
   date: string;
   name: string;

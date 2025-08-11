@@ -155,8 +155,8 @@ router.post('/process-pending', async (req, res) => {
         } else if (transaction.suggested_expense_type) {
           // Auto-process if we have a suggested type
           await db.insert('expenses', {
-            plaid_transaction_id: `simplefin_${transaction.simplefin_id}`,
-            plaid_account_id: transaction.simplefin_account_id,
+            simplefin_transaction_id: `simplefin_${transaction.simplefin_id}`,
+            simplefin_account_id: transaction.simplefin_account_id,
             amount: Math.abs(transaction.amount),
             date: transaction.posted_date,
             name: transaction.description,

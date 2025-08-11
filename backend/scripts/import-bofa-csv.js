@@ -152,11 +152,11 @@ async function importBofaCSV(filePath) {
           processed: suggestions.auto_approve || false
         });
         
-        // If auto-approved, also insert into main transactions table
-        if (suggestions.auto_approve && !suggestions.excluded) {
-          await db.insert('transactions', {
-            plaid_transaction_id: `csv_${transaction.id}`,
-            plaid_account_id: 'bofa_checking',
+        // If auto-approved, also insert into expenses table
+        if (suggestions.auto_approve && !suggestions.excluded && transaction.amount < 0) {
+          await db.insert('expenses', {
+            simplefin_transaction_id: `csv_${transaction.id}`,
+            simplefin_account_id: 'bofa_checking',
             amount: Math.abs(transaction.amount),
             date: dateString,
             name: transaction.description,

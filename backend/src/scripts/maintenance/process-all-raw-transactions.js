@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 require('dotenv').config();
-const db = require('../db/connection');
+const db = require('../../db/connection');
 
 async function processAllRawTransactions() {
   try {

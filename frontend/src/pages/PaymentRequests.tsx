@@ -249,6 +249,32 @@ export default function PaymentRequests() {
     }
   };
 
+  const handleGenerateHistoricalRent = async () => {
+    if (!confirm('Generate rent payment requests for all months from January 2025 to present? This is for testing and backfill purposes.')) {
+      return;
+    }
+    
+    try {
+      setCheckingEmails(true); // Reuse the same loading state
+      const response = await axios.post(`${config.api.baseURL}/api/payment/generate-historical-rent`);
+      
+      if (response.data.success) {
+        const { created, skipped, total } = response.data.summary;
+        const message = `Historical rent requests generated!\nCreated: ${created} new requests\nSkipped: ${skipped} existing\nTotal: ${total} requests processed`;
+        alert(message);
+        // Refresh payment requests to show the new ones
+        await fetchAllData();
+      }
+    } catch (err: any) {
+      console.error('Error generating historical rent:', err);
+      const errorMessage = err.response?.data?.error || 'Failed to generate historical rent requests';
+      setError(errorMessage);
+      alert('Failed to generate historical rent requests: ' + errorMessage);
+    } finally {
+      setCheckingEmails(false);
+    }
+  };
+
   // Handlers for unmatched payment actions
   const handleIgnoreEmail = async (emailId: number) => {
     try {
@@ -497,6 +523,17 @@ export default function PaymentRequests() {
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Typography variant="h4">Payment Requests</Typography>
         <Box>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={checkingEmails ? <CircularProgress size={16} /> : <HistoryIcon />}
+            onClick={handleGenerateHistoricalRent}
+            disabled={checkingEmails}
+            sx={{ mr: 1 }}
+            color="secondary"
+          >
+            Generate Historical Rent
+          </Button>
           <Button
             variant="outlined"
             size="small"
