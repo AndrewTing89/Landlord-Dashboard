@@ -118,9 +118,8 @@ class VenmoMatchingService {
         console.log(`🏷️  Found tracking ID in email: ${emailRecord.tracking_id}`);
         
         const trackingMatch = await db.getOne(`
-          SELECT pr.*, vpr.recipient_name, ub.bill_type
+          SELECT pr.*, pr.roommate_name as recipient_name, ub.bill_type
           FROM payment_requests pr
-          LEFT JOIN venmo_payment_requests vpr ON pr.utility_bill_id = vpr.utility_bill_id
           LEFT JOIN utility_bills ub ON pr.utility_bill_id = ub.id
           WHERE pr.tracking_id = $1
             AND pr.status = 'pending'
@@ -162,9 +161,8 @@ class VenmoMatchingService {
       // Find potential payment request matches - NO TIME WINDOW
       // Just match by amount and name
       const potentialMatches = await db.getMany(`
-        SELECT pr.*, vpr.recipient_name, ub.bill_type
+        SELECT pr.*, pr.roommate_name as recipient_name, ub.bill_type
         FROM payment_requests pr
-        LEFT JOIN venmo_payment_requests vpr ON pr.utility_bill_id = vpr.utility_bill_id
         LEFT JOIN utility_bills ub ON pr.utility_bill_id = ub.id
         WHERE pr.status = 'pending'
           AND ABS(pr.amount - $1) <= $2
@@ -308,45 +306,40 @@ class VenmoMatchingService {
         `, [paymentRequest.id]);
       }
       
-      // 3. Update venmo_payment_requests if exists
-      if (paymentRequest.venmo_request_id) {
-        await client.query(`
-          UPDATE venmo_payment_requests 
-          SET status = 'paid',
-              paid_date = $1,
-              updated_at = CURRENT_TIMESTAMP
-          WHERE id = $2
-        `, [emailRecord.received_date, paymentRequest.venmo_request_id]);
-      }
+      // 3. Note: venmo_payment_requests table removed - data is in payment_requests
       
       // 4. Create income record for the payment
       if (paymentRequest.bill_type === 'rent') {
-        // Create rent income record
-        const incomeDate = new Date(paymentRequest.year, paymentRequest.month - 1, 1);
+        // Create rent income record with proper accrual and cash dates
+        const accrualDate = new Date(paymentRequest.year, paymentRequest.month - 1, 1); // 1st of the month
+        const cashDate = emailRecord.received_date; // Actual payment date from Venmo
+        
         await client.query(`
           INSERT INTO income (
             date,
+            received_date,
             amount,
             description,
             income_type,
-            category,
-            source_type,
             payment_request_id,
             payer_name,
             notes,
+            month,
+            year,
             created_at,
             updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
         `, [
-          incomeDate,
+          accrualDate,  // Accrual date (1st of month)
+          cashDate,     // Cash date (when actually paid)
           parseFloat(paymentRequest.amount),
           `Rent Payment - ${paymentRequest.roommate_name} - ${this.getMonthName(paymentRequest.month)} ${paymentRequest.year}`,
           'rent',
-          'rent',
-          'payment_request',
           paymentRequest.id,
           paymentRequest.roommate_name,
-          `Auto-matched from Venmo email on ${new Date().toISOString().split('T')[0]}`
+          `Rent accrued ${new Date(accrualDate).toISOString().split('T')[0]}, paid ${new Date(cashDate).toISOString().split('T')[0]} via Venmo`,
+          paymentRequest.month,
+          paymentRequest.year
         ]);
         console.log(`✅ Created rent income record for ${paymentRequest.roommate_name}`);
       } else {
@@ -386,11 +379,11 @@ class VenmoMatchingService {
         amount,
         description,
         income_type,
-        category,
-        source_type,
         payment_request_id,
         payer_name,
         notes,
+        month,
+        year,
         created_at,
         updated_at
       ) VALUES (
@@ -401,11 +394,11 @@ class VenmoMatchingService {
       emailRecord.venmo_amount, // Positive for income
       `Utility Reimbursement - ${paymentRequest.bill_type} - ${this.getMonthName(paymentRequest.month)} ${paymentRequest.year}`,
       'utility_reimbursement',
-      paymentRequest.bill_type,
-      'payment_request',
       paymentRequest.id,
       emailRecord.venmo_actor,
-      `Auto-matched from Venmo email: ${emailRecord.venmo_note || 'No note'}`
+      `Auto-matched from Venmo email: ${emailRecord.venmo_note || 'No note'}`,
+      paymentRequest.month,
+      paymentRequest.year
     ]);
     
     console.log(`💰 Created utility reimbursement income record for $${emailRecord.venmo_amount}`);

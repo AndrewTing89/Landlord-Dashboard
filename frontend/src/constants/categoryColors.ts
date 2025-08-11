@@ -5,7 +5,7 @@ export const CATEGORY_COLORS: Record<string, string> = {
   // Utility expenses
   electricity: '#D4A017', // Gold/Yellow
   water: '#9C27B0', // Purple
-  internet: '#2196F3', // Blue
+  internet: '#F44336', // Red (keeping consistent with Dashboard)
   
   // Property expenses  
   maintenance: '#FF5722', // Deep Orange

@@ -49,27 +49,20 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip, LineChart, L
 import { apiService } from '../services/api';
 import { ExpenseSummary, Transaction, PaymentRequest } from '../types';
 import { format } from 'date-fns';
+import { CATEGORY_COLORS, getCategoryChip } from '../constants/categoryColors';
 
+// Map formatted names to colors for backward compatibility
 const COLORS = {
-  electricity: '#D4A017', // Gold/Yellow
-  water: '#9C27B0', // Purple
-  maintenance: '#FF5722', // Deep Orange
-  landscape: '#E91E63', // Pink-Red
-  internet: '#F44336', // Red
-  property_tax: '#D32F2F', // Dark Red
-  rent: '#4CAF50', // Green
-  other: '#8884D8',
-  insurance: '#FF6F00', // Amber-Orange
-  // Map formatted names to colors
-  'Electricity': '#D4A017', // Gold/Yellow
-  'Water': '#9C27B0', // Purple
-  'Maintenance': '#FF5722', // Deep Orange
-  'Landscape': '#E91E63', // Pink-Red
-  'Internet': '#F44336', // Red
-  'Property Tax': '#D32F2F', // Dark Red
-  'Rent': '#4CAF50', // Green
-  'Other': '#8884D8',
-  'Insurance': '#FF6F00', // Amber-Orange
+  ...CATEGORY_COLORS,
+  'Electricity': CATEGORY_COLORS.electricity,
+  'Water': CATEGORY_COLORS.water,
+  'Maintenance': CATEGORY_COLORS.maintenance,
+  'Landscape': CATEGORY_COLORS.landscape,
+  'Internet': CATEGORY_COLORS.internet,
+  'Property Tax': CATEGORY_COLORS.property_tax,
+  'Rent': CATEGORY_COLORS.rent,
+  'Other': CATEGORY_COLORS.other,
+  'Insurance': CATEGORY_COLORS.insurance,
 };
 
 // Custom styled connector for the status stepper
@@ -273,49 +266,18 @@ export default function Dashboard() {
   };
 
   const getBillTypeChip = (type: string | null) => {
-    if (!type) {
-      return <Chip label="Unknown" color="default" size="small" />;
-    }
-    if (type === 'electricity') {
-      return (
-        <Chip
-          label="Electricity"
-          size="small"
-          sx={{ 
-            backgroundColor: '#D4A017',
-            color: 'white',
-            fontWeight: 500
-          }}
-        />
-      );
-    }
-    if (type === 'water') {
-      return (
-        <Chip
-          label="Water"
-          size="small"
-          sx={{ 
-            backgroundColor: '#9C27B0',
-            color: 'white',
-            fontWeight: 500
-          }}
-        />
-      );
-    }
-    if (type === 'rent') {
-      return (
-        <Chip
-          label="Rent"
-          size="small"
-          sx={{ 
-            backgroundColor: '#4CAF50',
-            color: 'white',
-            fontWeight: 500
-          }}
-        />
-      );
-    }
-    return <Chip label={type} color="default" size="small" />;
+    const chipConfig = getCategoryChip(type);
+    return (
+      <Chip
+        label={chipConfig.label}
+        size="small"
+        sx={{ 
+          backgroundColor: chipConfig.backgroundColor,
+          color: chipConfig.color,
+          fontWeight: 500
+        }}
+      />
+    );
   };
 
   const getPaymentStatus = (request: PaymentRequest) => {

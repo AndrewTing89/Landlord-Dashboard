@@ -65,6 +65,7 @@ import {
 } from '@mui/icons-material';
 import { format } from 'date-fns';
 import { apiService } from '../services/api';
+import { getCategoryChip } from '../constants/categoryColors';
 import { PaymentRequest } from '../types';
 import axios from 'axios';
 import config from '../config';
@@ -405,59 +406,16 @@ export default function PaymentRequests() {
   };
 
   const getBillTypeChip = (type: string | null) => {
-    if (!type) {
-      return (
-        <Chip
-          label="Unknown"
-          color="default"
-          size="small"
-        />
-      );
-    }
-    if (type === 'electricity') {
-      return (
-        <Chip
-          label="Electricity"
-          size="small"
-          sx={{ 
-            backgroundColor: '#D4A017',
-            color: 'white',
-            fontWeight: 500
-          }}
-        />
-      );
-    }
-    if (type === 'water') {
-      return (
-        <Chip
-          label="Water"
-          size="small"
-          sx={{ 
-            backgroundColor: '#9C27B0',
-            color: 'white',
-            fontWeight: 500
-          }}
-        />
-      );
-    }
-    if (type === 'rent') {
-      return (
-        <Chip
-          label="Rent"
-          size="small"
-          sx={{ 
-            backgroundColor: '#4CAF50',
-            color: 'white',
-            fontWeight: 500
-          }}
-        />
-      );
-    }
+    const chipConfig = getCategoryChip(type);
     return (
       <Chip
-        label={type}
-        color="default"
+        label={chipConfig.label}
         size="small"
+        sx={{ 
+          backgroundColor: chipConfig.backgroundColor,
+          color: chipConfig.color,
+          fontWeight: 500
+        }}
       />
     );
   };
