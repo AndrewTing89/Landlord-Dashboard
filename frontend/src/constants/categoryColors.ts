@@ -17,7 +17,7 @@ export const CATEGORY_COLORS: Record<string, string> = {
   
   // Income
   rent: '#4CAF50', // Green
-  utility_reimbursement: '#4CAF50', // Green (income)
+  utility_reimbursement: '#81C784', // Light Green (income)
   
   // Other
   other: '#8884D8', // Light Purple
@@ -27,8 +27,8 @@ export const getCategoryChip = (type: string | null) => {
   // Map old category names to new labels
   const labelMapping: Record<string, string> = {
     'maintenance': 'Supplies',
-    'landscape': 'Cleaning/Maintenance',
-    'cleaning_maintenance': 'Cleaning/Maintenance',
+    'landscape': 'Maintenance/Cleaning',
+    'cleaning_maintenance': 'Maintenance/Cleaning',
     'supplies': 'Supplies'
   };
   

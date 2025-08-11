@@ -58,7 +58,7 @@ const COLORS = {
   'Water': CATEGORY_COLORS.water,
   'Supplies': CATEGORY_COLORS.supplies,
   'Maintenance': CATEGORY_COLORS.maintenance,
-  'Cleaning/Maintenance': CATEGORY_COLORS.cleaning_maintenance,
+  'Maintenance/Cleaning': CATEGORY_COLORS.cleaning_maintenance,
   'Landscape': CATEGORY_COLORS.landscape,
   'Internet': CATEGORY_COLORS.internet,
   'Property Tax': CATEGORY_COLORS.property_tax,
@@ -384,7 +384,7 @@ export default function Dashboard() {
   const chartData = summary
     .filter(s => s.expense_type && s.expense_type !== 'rent' && s.expense_type !== 'other' && s.expense_type !== 'utility_reimbursement' && parseFloat(s.total_amount) > 0)
     .map(s => ({
-      name: s.expense_type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' '),
+      name: getCategoryChip(s.expense_type).label,
       value: parseFloat(s.total_amount),
     }));
 
@@ -599,13 +599,13 @@ export default function Dashboard() {
                     dataKey="maintenance" 
                     stackId="expenses"
                     fill={COLORS.maintenance}
-                    name="Maintenance"
+                    name="Supplies"
                   />
                   <Bar 
                     dataKey="landscape" 
                     stackId="expenses"
                     fill={COLORS.landscape}
-                    name="Landscape"
+                    name="Maintenance/Cleaning"
                   />
                   <Bar 
                     dataKey="property_tax" 
@@ -693,10 +693,13 @@ export default function Dashboard() {
                       </Box>
                       <Box display="flex" alignItems="center" gap={1} flexShrink={0}>
                         <Chip
-                          label={transaction.expense_type ? transaction.expense_type.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') : 'Unknown'}
+                          label={getCategoryChip(transaction.expense_type).label}
                           size="small"
-                          color="default"
-                          sx={{ minWidth: 80 }}
+                          sx={{ 
+                            backgroundColor: getCategoryChip(transaction.expense_type).backgroundColor,
+                            color: getCategoryChip(transaction.expense_type).color,
+                            minWidth: 80 
+                          }}
                         />
                         <Typography
                           variant="body2"
