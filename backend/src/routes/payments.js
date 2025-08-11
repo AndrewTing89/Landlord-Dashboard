@@ -236,4 +236,40 @@ router.get('/confirmations', async (req, res) => {
   }
 });
 
+// Check and create rent payment request for current month
+router.post('/check-rent', async (req, res) => {
+  try {
+    const { createRentPaymentRequest } = require('../scripts/create-rent-payment-request');
+    const currentDate = new Date();
+    const year = currentDate.getFullYear();
+    const month = currentDate.getMonth() + 1;
+    const rentAmount = 1685; // Fixed rent amount for Ushi
+    
+    // Check if rent request already exists for this month
+    const existing = await db.getOne(
+      `SELECT id, status, amount FROM payment_requests 
+       WHERE bill_type = 'rent' 
+       AND year = $1 
+       AND month = $2`,
+      [year, month]
+    );
+    
+    if (existing) {
+      res.json({
+        success: false,
+        message: `Rent request already exists for ${month}/${year}`,
+        exists: true,
+        request: existing
+      });
+    } else {
+      // Create new rent payment request
+      const result = await createRentPaymentRequest(year, month, rentAmount);
+      res.json(result);
+    }
+  } catch (error) {
+    console.error('Error checking/creating rent payment request:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;

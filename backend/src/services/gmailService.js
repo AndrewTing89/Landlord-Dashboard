@@ -58,19 +58,36 @@ class GmailService {
    * Save OAuth tokens to database
    */
   async saveTokens(tokens) {
-    // Get user email
-    const gmail = google.gmail({ version: 'v1', auth: this.oauth2Client });
-    const profile = await gmail.users.getProfile({ userId: 'me' });
+    console.log('📝 saveTokens called with tokens:', tokens ? 'present' : 'missing');
     
-    await db.query(`
-      INSERT INTO gmail_sync_state (account_email, sync_token, last_sync_date, active)
-      VALUES ($1, $2, CURRENT_TIMESTAMP, true)
-      ON CONFLICT (account_email) 
-      DO UPDATE SET 
-        sync_token = $2,
-        last_sync_date = CURRENT_TIMESTAMP,
-        updated_at = CURRENT_TIMESTAMP
-    `, [profile.data.emailAddress, JSON.stringify(tokens)]);
+    try {
+      // Get user email
+      const gmail = google.gmail({ version: 'v1', auth: this.oauth2Client });
+      console.log('📧 Getting user profile...');
+      const profile = await gmail.users.getProfile({ userId: 'me' });
+      console.log('✅ Got user email:', profile.data.emailAddress);
+      
+      console.log('💾 Saving tokens to database...');
+      const result = await db.query(`
+        INSERT INTO gmail_sync_state (account_email, sync_token, last_sync_date, active)
+        VALUES ($1, $2, CURRENT_TIMESTAMP, true)
+        ON CONFLICT (account_email) 
+        DO UPDATE SET 
+          sync_token = $2,
+          last_sync_date = CURRENT_TIMESTAMP,
+          updated_at = CURRENT_TIMESTAMP
+        RETURNING *
+      `, [profile.data.emailAddress, JSON.stringify(tokens)]);
+      
+      console.log('✅ Tokens saved successfully:', result.rows[0] ? 'row created/updated' : 'no row returned');
+      return result.rows[0];
+    } catch (error) {
+      console.error('❌ Error in saveTokens:', error);
+      console.error('Error details:', error.message);
+      if (error.detail) console.error('Database error detail:', error.detail);
+      if (error.hint) console.error('Database hint:', error.hint);
+      throw error;
+    }
   }
 
   /**
