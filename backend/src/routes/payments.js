@@ -76,28 +76,53 @@ router.post('/requests/:id/mark-paid', async (req, res) => {
         ['paid', new Date(), id]
       );
       
-      // Create a recuperation transaction
+      // Create proper income record with date tracking
       const utilityName = paymentRequest.bill_type === 'electricity' ? 'PG&E' : 
                          paymentRequest.bill_type === 'water' ? 'Great Oaks Water' : 
                          paymentRequest.bill_type;
       
-      await db.insert('transactions', {
-        plaid_transaction_id: `recuperation_${paymentRequest.id}_${Date.now()}`,
-        plaid_account_id: 'manual_entry',
+      // Determine income month (what month this payment is for)
+      let incomeMonth = new Date();
+      if (paymentRequest.charge_date) {
+        incomeMonth = new Date(paymentRequest.charge_date);
+      } else if (paymentRequest.month && paymentRequest.year) {
+        incomeMonth = new Date(paymentRequest.year, paymentRequest.month - 1, 1);
+      }
+      
+      // Determine income type
+      const incomeType = paymentRequest.bill_type === 'rent' ? 'rent' : 'utility_reimbursement';
+      
+      await db.insert('income', {
         amount: parseFloat(paymentRequest.amount),
-        date: new Date(),
-        name: `${paymentRequest.roommate_name} - ${utilityName} Payment`,
-        merchant_name: paymentRequest.roommate_name,
-        expense_type: 'utility_reimbursement',
-        category: 'Reimbursement',
-        subcategory: `${paymentRequest.bill_type} payment`
+        date: incomeMonth, // For backwards compatibility
+        description: `${paymentRequest.roommate_name} - ${utilityName} Payment`,
+        income_type: incomeType,
+        source: 'payment_request',
+        payment_request_id: paymentRequest.id,
+        payer_name: paymentRequest.roommate_name,
+        income_month: incomeMonth,
+        received_date: new Date(), // When we marked it as paid
+        recorded_date: new Date(), // When we created this record
+        basis_type: 'accrual', // Default to accrual basis
+        notes: `Payment request #${paymentRequest.id} marked paid via dashboard`
+      });
+      
+      // Create payment confirmation record
+      await db.insert('payment_confirmations', {
+        payment_request_id: paymentRequest.id,
+        confirmation_type: 'manual',
+        confirmed_amount: parseFloat(paymentRequest.amount),
+        confirmation_date: new Date(),
+        confirmed_by: 'dashboard_user', // Could be enhanced with actual user info
+        confirmation_notes: 'Payment manually marked as paid via dashboard',
+        confidence_score: 1.0 // Manual confirmation = 100% confident
       });
       
       await db.query('COMMIT');
       
       res.json({ 
         success: true, 
-        message: 'Payment marked as paid and recuperation transaction created' 
+        message: 'Payment marked as paid and income record created' 
       });
     } catch (error) {
       await db.query('ROLLBACK');
@@ -105,6 +130,38 @@ router.post('/requests/:id/mark-paid', async (req, res) => {
     }
   } catch (error) {
     console.error('Error marking payment as paid:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Mark payment as foregone
+router.post('/requests/:id/forego', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+    
+    // First get the payment request details
+    const paymentRequest = await db.getOne(
+      'SELECT * FROM payment_requests WHERE id = $1',
+      [id]
+    );
+    
+    if (!paymentRequest) {
+      return res.status(404).json({ error: 'Payment request not found' });
+    }
+    
+    // Update payment request status
+    await db.query(
+      'UPDATE payment_requests SET status = $1, paid_date = $2, notes = $3 WHERE id = $4',
+      ['foregone', new Date(), reason || 'Payment foregone by landlord', id]
+    );
+    
+    res.json({ 
+      success: true, 
+      message: 'Payment request marked as foregone' 
+    });
+  } catch (error) {
+    console.error('Error marking payment as foregone:', error);
     res.status(500).json({ error: error.message });
   }
 });

@@ -106,6 +106,7 @@ export const apiService = {
     end_date?: string;
     type?: 'income' | 'expense';
     search?: string;
+    basis?: 'accrual' | 'cash';
     limit?: number;
     offset?: number;
   }) => api.get(config.api.endpoints.ledger, { params }),

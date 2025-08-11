@@ -7,7 +7,7 @@ const db = require('../db/connection');
  */
 router.get('/', async (req, res) => {
   try {
-    const { start_date, end_date, type, search, limit = 100, offset = 0 } = req.query;
+    const { start_date, end_date, type, search, basis = 'accrual', limit = 100, offset = 0 } = req.query;
     
     // Build parameters array first to know the indices
     const params = [];
@@ -34,6 +34,10 @@ router.get('/', async (req, res) => {
       searchParam = `$${paramIndex}`;
     }
     
+    // Select date field based on basis type
+    const dateField = basis === 'cash' ? 'received_date' : 'income_month';
+    const dateFieldWithTable = basis === 'cash' ? 'i.received_date' : 'COALESCE(i.income_month, i.date)';
+    
     // Build the query using UNION to combine income and expenses
     let query = `
       WITH ledger_entries AS (
@@ -41,7 +45,9 @@ router.get('/', async (req, res) => {
         SELECT 
           'income' as entry_type,
           i.id,
-          i.date,
+          ${dateFieldWithTable} as date,
+          COALESCE(i.income_month, i.date) as accrual_date,
+          i.received_date as cash_date,
           i.amount,
           i.description,
           i.income_type as category,
@@ -54,8 +60,8 @@ router.get('/', async (req, res) => {
         FROM income i
         LEFT JOIN payment_requests pr ON i.payment_request_id = pr.id
         WHERE 1=1
-        ${start_date ? `AND i.date >= ${startDateParam}` : ""}
-        ${end_date ? `AND i.date <= ${endDateParam}` : ""}
+        ${start_date ? `AND ${dateFieldWithTable} >= ${startDateParam}` : ""}
+        ${end_date ? `AND ${dateFieldWithTable} <= ${endDateParam}` : ""}
         ${type === 'income' ? "" : type === 'expense' ? "AND FALSE" : ""}
         
         UNION ALL
@@ -65,6 +71,8 @@ router.get('/', async (req, res) => {
           'expense' as entry_type,
           e.id,
           e.date,
+          e.date as accrual_date,
+          e.date as cash_date,
           e.amount,
           e.name as description,
           e.expense_type as category,
@@ -103,10 +111,10 @@ router.get('/', async (req, res) => {
       WITH period_totals AS (
         SELECT 
           COALESCE(SUM(amount), 0) as total_income
-        FROM income
+        FROM income i
         WHERE 1=1
-        ${start_date ? `AND date >= ${startDateParam}` : ""}
-        ${end_date ? `AND date <= ${endDateParam}` : ""}
+        ${start_date ? `AND ${dateFieldWithTable} >= ${startDateParam}` : ""}
+        ${end_date ? `AND ${dateFieldWithTable} <= ${endDateParam}` : ""}
       ),
       expense_totals AS (
         SELECT 

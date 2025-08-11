@@ -26,11 +26,14 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { format, startOfMonth, endOfMonth, startOfYear, endOfYear } from 'date-fns';
 import { apiService } from '../services/api';
+import { CATEGORY_COLORS as COLORS } from '../constants/categoryColors';
 
 interface LedgerEntry {
   entry_type: 'income' | 'expense';
   id: number;
   date: string;
+  accrual_date: string;
+  cash_date: string;
   amount: string;
   description: string;
   category: string;
@@ -46,19 +49,6 @@ interface LedgerTotals {
   total_expenses: string;
   net_income: string;
 }
-
-const COLORS = {
-  electricity: '#D4A017', // Gold/Yellow
-  water: '#9C27B0', // Purple
-  rent: '#4CAF50', // Green
-  maintenance: '#FF6B6B', // Soft Red
-  property_tax: '#E74C3C', // Red
-  insurance: '#FF5722', // Deep Orange
-  landscape: '#8BC34A', // Light Green
-  internet: '#2196F3', // Blue
-  utility_reimbursement: '#00BCD4', // Cyan
-  other: '#9E9E9E', // Grey
-};
 
 export default function Ledger() {
   const [entries, setEntries] = useState<LedgerEntry[]>([]);
@@ -76,6 +66,7 @@ export default function Ledger() {
   const [entryType, setEntryType] = useState<'all' | 'income' | 'expense'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [view, setView] = useState<'list' | 'summary'>('list');
+  const [basisType, setBasisType] = useState<'accrual' | 'cash'>('accrual');
   
   // Pagination - default to 50 rows to show more data
   const [page, setPage] = useState(0);
@@ -83,7 +74,7 @@ export default function Ledger() {
   
   useEffect(() => {
     fetchLedgerData();
-  }, [startDate, endDate, entryType, searchTerm, page, rowsPerPage]);
+  }, [startDate, endDate, entryType, searchTerm, basisType, page, rowsPerPage]);
 
   const fetchLedgerData = async () => {
     try {
@@ -99,6 +90,7 @@ export default function Ledger() {
       if (endDate) params.end_date = format(endDate, 'yyyy-MM-dd');
       if (entryType !== 'all') params.type = entryType;
       if (searchTerm) params.search = searchTerm;
+      params.basis = basisType;
       
       const response = await apiService.getLedger(params);
       setEntries(response.data.entries);
@@ -225,6 +217,19 @@ export default function Ledger() {
                 select
                 fullWidth
                 size="small"
+                label="Accounting Basis"
+                value={basisType}
+                onChange={(e) => setBasisType(e.target.value as any)}
+              >
+                <MenuItem value="accrual">Accrual Basis</MenuItem>
+                <MenuItem value="cash">Cash Basis</MenuItem>
+              </TextField>
+            </Grid>
+            <Grid item xs={12} md={2}>
+              <TextField
+                select
+                fullWidth
+                size="small"
                 label="Type"
                 value={entryType}
                 onChange={(e) => setEntryType(e.target.value as any)}
@@ -234,7 +239,7 @@ export default function Ledger() {
                 <MenuItem value="expense">Expenses Only</MenuItem>
               </TextField>
             </Grid>
-            <Grid item xs={12} md={3}>
+            <Grid item xs={12} md={2}>
               <TextField
                 fullWidth
                 size="small"
@@ -244,7 +249,7 @@ export default function Ledger() {
                 placeholder="Search description or party..."
               />
             </Grid>
-            <Grid item xs={12} md={3}>
+            <Grid item xs={12} md={2}>
               <ToggleButtonGroup
                 value={view}
                 exclusive
@@ -273,7 +278,9 @@ export default function Ledger() {
             <Table>
               <TableHead>
                 <TableRow>
-                  <TableCell>Date</TableCell>
+                  <TableCell>Sort Date</TableCell>
+                  <TableCell>Accrual Date</TableCell>
+                  <TableCell>Cash Date</TableCell>
                   <TableCell>Type</TableCell>
                   <TableCell>Description</TableCell>
                   <TableCell>Category</TableCell>
@@ -287,6 +294,24 @@ export default function Ledger() {
                   <TableRow key={`${entry.entry_type}-${entry.id}`}>
                     <TableCell>
                       {format(new Date(entry.date), 'MM/dd/yyyy')}
+                    </TableCell>
+                    <TableCell>
+                      {entry.entry_type === 'income' && entry.accrual_date ? (
+                        <span style={{ color: basisType === 'accrual' ? '#1976d2' : '#666' }}>
+                          {format(new Date(entry.accrual_date), 'MM/dd/yyyy')}
+                        </span>
+                      ) : (
+                        <span style={{ color: '#999' }}>—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {entry.entry_type === 'income' && entry.cash_date ? (
+                        <span style={{ color: basisType === 'cash' ? '#1976d2' : '#666' }}>
+                          {format(new Date(entry.cash_date), 'MM/dd/yyyy')}
+                        </span>
+                      ) : (
+                        <span style={{ color: '#999' }}>—</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Chip

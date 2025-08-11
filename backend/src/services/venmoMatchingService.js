@@ -288,13 +288,25 @@ class VenmoMatchingService {
         emailRecord.id
       ]);
       
-      // 2. Update payment_requests status
-      await client.query(`
-        UPDATE payment_requests 
-        SET status = 'paid',
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1
-      `, [paymentRequest.id]);
+      // 2. Update payment_requests status based on email type
+      if (emailRecord.email_type === 'request_sent') {
+        // Update status to 'sent' and set request_date from Venmo email
+        await client.query(`
+          UPDATE payment_requests 
+          SET status = 'sent',
+              request_date = $2,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `, [paymentRequest.id, emailRecord.venmo_date || emailRecord.received_date]);
+      } else if (emailRecord.email_type === 'payment_received') {
+        // Update status to 'paid' 
+        await client.query(`
+          UPDATE payment_requests 
+          SET status = 'paid',
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        `, [paymentRequest.id]);
+      }
       
       // 3. Update venmo_payment_requests if exists
       if (paymentRequest.venmo_request_id) {
@@ -403,16 +415,12 @@ class VenmoMatchingService {
    * Get unmatched emails requiring manual review
    */
   async getUnmatchedEmails() {
-    // Get ALL unmatched emails, not just those in the venmo_unmatched_emails table
-    // Exclude ignored emails
+    // Get ALL unmatched emails that are not ignored
     return await db.getMany(`
       SELECT 
-        ve.*,
-        vue.potential_matches,
-        vue.resolution_status
+        ve.*
       FROM venmo_emails ve
-      LEFT JOIN venmo_unmatched_emails vue ON ve.id = vue.venmo_email_id
-      WHERE (ve.matched = false OR vue.resolution_status = 'pending')
+      WHERE ve.matched = false
         AND (ve.ignored IS NULL OR ve.ignored = false)
       ORDER BY ve.received_date DESC
     `);

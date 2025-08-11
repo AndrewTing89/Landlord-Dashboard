@@ -44,32 +44,7 @@ import {
 import { format } from 'date-fns';
 import { apiService } from '../services/api';
 import { Transaction, ExpenseType } from '../types';
-
-// Color scheme matching Dashboard and PaymentRequests
-const getExpenseTypeChip = (type: string | null) => {
-  const colorMap: Record<string, string> = {
-    electricity: '#D4A017', // Gold/Yellow
-    water: '#9C27B0', // Purple
-    maintenance: '#FF5722', // Deep Orange
-    landscape: '#E91E63', // Pink-Red
-    internet: '#F44336', // Red
-    property_tax: '#D32F2F', // Dark Red
-    rent: '#4CAF50', // Green
-    insurance: '#FF6F00', // Amber-Orange
-    other: '#8884D8',
-    utility_reimbursement: '#4CAF50', // Green (income)
-  };
-
-  const label = type ? type.split('_').map(word => 
-    word.charAt(0).toUpperCase() + word.slice(1)
-  ).join(' ') : 'Unknown';
-
-  return {
-    label,
-    backgroundColor: colorMap[type || ''] || '#757575',
-    color: 'white'
-  };
-};
+import { getCategoryChip as getExpenseTypeChip } from '../constants/categoryColors';
 
 interface EditDialogState {
   open: boolean;
@@ -221,7 +196,7 @@ export default function Transactions() {
   return (
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4">Transactions</Typography>
+        <Typography variant="h4">Transactions (Expenses)</Typography>
         <Box>
           <Tooltip title="Export to Excel">
             <IconButton>
@@ -285,10 +260,6 @@ export default function Transactions() {
                     return `${selected.length} selected`;
                   }}
                 >
-                  <MenuItem value="rent">
-                    <Checkbox checked={selectedExpenseTypes.indexOf('rent') > -1} />
-                    <ListItemText primary="Rent Income" />
-                  </MenuItem>
                   <MenuItem value="electricity">
                     <Checkbox checked={selectedExpenseTypes.indexOf('electricity') > -1} />
                     <ListItemText primary="Electricity" />
@@ -301,13 +272,17 @@ export default function Transactions() {
                     <Checkbox checked={selectedExpenseTypes.indexOf('internet') > -1} />
                     <ListItemText primary="Internet" />
                   </MenuItem>
-                  <MenuItem value="maintenance">
-                    <Checkbox checked={selectedExpenseTypes.indexOf('maintenance') > -1} />
-                    <ListItemText primary="Maintenance" />
+                  <MenuItem value="repairs">
+                    <Checkbox checked={selectedExpenseTypes.indexOf('repairs') > -1} />
+                    <ListItemText primary="Repairs" />
                   </MenuItem>
-                  <MenuItem value="landscape">
-                    <Checkbox checked={selectedExpenseTypes.indexOf('landscape') > -1} />
-                    <ListItemText primary="Landscape" />
+                  <MenuItem value="supplies">
+                    <Checkbox checked={selectedExpenseTypes.indexOf('supplies') > -1} />
+                    <ListItemText primary="Supplies" />
+                  </MenuItem>
+                  <MenuItem value="cleaning_maintenance">
+                    <Checkbox checked={selectedExpenseTypes.indexOf('cleaning_maintenance') > -1} />
+                    <ListItemText primary="Cleaning & Maintenance" />
                   </MenuItem>
                   <MenuItem value="property_tax">
                     <Checkbox checked={selectedExpenseTypes.indexOf('property_tax') > -1} />
@@ -349,10 +324,6 @@ export default function Transactions() {
                     return `Excluding ${selected.length}`;
                   }}
                 >
-                  <MenuItem value="rent">
-                    <Checkbox checked={excludedExpenseTypes.indexOf('rent') > -1} />
-                    <ListItemText primary="Rent" />
-                  </MenuItem>
                   <MenuItem value="electricity">
                     <Checkbox checked={excludedExpenseTypes.indexOf('electricity') > -1} />
                     <ListItemText primary="Electricity" />
@@ -365,13 +336,17 @@ export default function Transactions() {
                     <Checkbox checked={excludedExpenseTypes.indexOf('internet') > -1} />
                     <ListItemText primary="Internet" />
                   </MenuItem>
-                  <MenuItem value="maintenance">
-                    <Checkbox checked={excludedExpenseTypes.indexOf('maintenance') > -1} />
-                    <ListItemText primary="Maintenance" />
+                  <MenuItem value="repairs">
+                    <Checkbox checked={excludedExpenseTypes.indexOf('repairs') > -1} />
+                    <ListItemText primary="Repairs" />
                   </MenuItem>
-                  <MenuItem value="landscape">
-                    <Checkbox checked={excludedExpenseTypes.indexOf('landscape') > -1} />
-                    <ListItemText primary="Landscape" />
+                  <MenuItem value="supplies">
+                    <Checkbox checked={excludedExpenseTypes.indexOf('supplies') > -1} />
+                    <ListItemText primary="Supplies" />
+                  </MenuItem>
+                  <MenuItem value="cleaning_maintenance">
+                    <Checkbox checked={excludedExpenseTypes.indexOf('cleaning_maintenance') > -1} />
+                    <ListItemText primary="Cleaning & Maintenance" />
                   </MenuItem>
                   <MenuItem value="property_tax">
                     <Checkbox checked={excludedExpenseTypes.indexOf('property_tax') > -1} />
@@ -448,10 +423,7 @@ export default function Transactions() {
                     />
                   </TableCell>
                   <TableCell align="right">
-                    <Typography
-                      variant="body2"
-                      color={transaction.expense_type === 'rent' ? 'success.main' : 'text.primary'}
-                    >
+                    <Typography variant="body2" color="text.primary">
                       {formatCurrency(transaction.amount)}
                     </Typography>
                   </TableCell>
@@ -523,11 +495,12 @@ export default function Transactions() {
                   onChange={(e) => setEditDialog({ ...editDialog, newExpenseType: e.target.value })}
                   label="Expense Type"
                 >
-                  <MenuItem value="rent">Rent Income</MenuItem>
                   <MenuItem value="electricity">Electricity</MenuItem>
                   <MenuItem value="water">Water</MenuItem>
                   <MenuItem value="internet">Internet</MenuItem>
-                  <MenuItem value="maintenance">Maintenance</MenuItem>
+                  <MenuItem value="repairs">Repairs</MenuItem>
+                  <MenuItem value="supplies">Supplies</MenuItem>
+                  <MenuItem value="cleaning_maintenance">Cleaning & Maintenance</MenuItem>
                   <MenuItem value="property_tax">Property Tax</MenuItem>
                   <MenuItem value="insurance">Insurance</MenuItem>
                 </Select>

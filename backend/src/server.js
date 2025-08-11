@@ -60,6 +60,7 @@ app.use('/api/gmail', routes.gmail);
 app.use('/api/ledger', require('./routes/ledger'));
 app.use('/api/health', require('./routes/health'));
 app.use('/api/dashboard-sync', require('./routes/dashboard-sync'));
+app.use('/api/estimated-taxes', require('./routes/estimatedTaxes'));
 
 // Tenant Portal routes
 app.use('/api/tenant/auth', require('./routes/tenantAuth'));
@@ -565,14 +566,17 @@ app.post('/api/payment-requests/:id/mark-paid', async (req, res) => {
       }
       
       await db.insert('income', {
-        date: incomeDate,
+        date: incomeDate, // Keep the old date column for backwards compatibility
         amount: parseFloat(paymentRequest.amount), // Positive for income
         description: description,
         income_type: incomeType,
-        category: paymentRequest.bill_type === 'rent' ? null : paymentRequest.bill_type,
-        source_type: 'payment_request',
+        source: 'payment_request',
         payment_request_id: paymentRequest.id,
         payer_name: paymentRequest.roommate_name,
+        income_month: incomeDate, // The month this income is attributed to
+        received_date: new Date(), // When we marked it as paid
+        recorded_date: new Date(), // When we created this record
+        basis_type: 'accrual', // Default to accrual basis
         notes: `Payment request #${paymentRequest.id} marked as paid on ${new Date().toISOString().split('T')[0]}`
       });
       
@@ -725,7 +729,7 @@ app.get('/api/payment-confirmations', async (req, res) => {
       `SELECT pc.*, pr.roommate_name, pr.bill_type
        FROM payment_confirmations pc
        JOIN payment_requests pr ON pc.payment_request_id = pr.id
-       ORDER BY pc.processed_at DESC
+       ORDER BY pc.created_at DESC
        LIMIT 50`
     );
     

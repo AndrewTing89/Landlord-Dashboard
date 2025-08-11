@@ -333,7 +333,7 @@ class GmailService {
         processed++;
         
         // Try to match with payment requests
-        if (parsed.email_type === 'payment_received' && parsed.venmo_amount) {
+        if ((parsed.email_type === 'payment_received' || parsed.email_type === 'request_sent') && parsed.venmo_amount) {
           const matchResult = await this.matchPaymentEmail(savedEmail);
           if (matchResult.matched) {
             matched++;

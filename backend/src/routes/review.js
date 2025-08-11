@@ -1,14 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db/connection');
+const paymentRequestService = require('../services/paymentRequestService');
 
 // Get pending transactions for review
 router.get('/pending', async (req, res) => {
   try {
-    const { limit = 50, offset = 0 } = req.query;
+    const { limit = 50, offset = 0, type } = req.query;
     
-    // Get pending transactions
-    const transactions = await db.query(`
+    let query = `
       SELECT 
         id,
         simplefin_id,
@@ -23,22 +23,39 @@ router.get('/pending', async (req, res) => {
       FROM raw_transactions
       WHERE processed = false 
         AND excluded = false
-      ORDER BY posted_date DESC
-      LIMIT $1 OFFSET $2
-    `, [limit, offset]);
+    `;
     
-    // Get total count for pagination
-    const countResult = await db.getOne(`
+    let countQuery = `
       SELECT COUNT(*) as total
       FROM raw_transactions
       WHERE processed = false AND excluded = false
-    `);
+    `;
+    
+    const params = [limit, offset];
+    const countParams = [];
+    
+    // Add type filter if provided
+    if (type) {
+      query += ` AND suggested_expense_type = $3`;
+      countQuery += ` AND suggested_expense_type = $1`;
+      params.push(type);
+      countParams.push(type);
+    }
+    
+    query += ` ORDER BY posted_date DESC LIMIT $1 OFFSET $2`;
+    
+    // Get pending transactions
+    const transactions = await db.query(query, params);
+    
+    // Get total count for pagination
+    const countResult = await db.getOne(countQuery, countParams);
     
     res.json({
       transactions: transactions.rows,
       total: parseInt(countResult.total),
       limit: parseInt(limit),
-      offset: parseInt(offset)
+      offset: parseInt(offset),
+      type: type || null
     });
   } catch (error) {
     console.error('Error fetching pending transactions:', error);
@@ -66,26 +83,59 @@ router.post('/approve/:id', async (req, res) => {
     await db.query('BEGIN');
     
     try {
-      // Insert into main transactions table
-      await db.insert('transactions', {
-        plaid_transaction_id: `simplefin_${rawTx.simplefin_id}`,
-        plaid_account_id: rawTx.simplefin_account_id,
-        amount: Math.abs(rawTx.amount),
-        date: rawTx.posted_date,
-        name: rawTx.description,
-        merchant_name: merchant_name || rawTx.suggested_merchant || rawTx.payee,
-        expense_type: expense_type,
-        category: rawTx.category || 'Manual Review',
-        subcategory: null
-      });
-      
-      // Mark as processed
-      await db.query(
-        'UPDATE raw_transactions SET processed = true, updated_at = NOW() WHERE id = $1',
-        [id]
-      );
+      // Only process expenses (negative amounts)
+      // Positive amounts (deposits) should be excluded, not approved
+      if (rawTx.amount > 0) {
+        // If trying to approve a deposit, just mark it as excluded instead
+        await db.query(
+          `UPDATE raw_transactions 
+           SET excluded = true, 
+               exclude_reason = 'Bank deposit - income tracked via payment requests',
+               processed = true,
+               updated_at = NOW() 
+           WHERE id = $1`,
+          [id]
+        );
+      } else {
+        // Expense (negative amounts) - insert into expenses table
+        await db.insert('expenses', {
+          plaid_transaction_id: `simplefin_${rawTx.simplefin_id}`,
+          plaid_account_id: rawTx.simplefin_account_id,
+          amount: Math.abs(rawTx.amount),
+          date: rawTx.posted_date,
+          name: rawTx.description,
+          merchant_name: merchant_name || rawTx.suggested_merchant || rawTx.payee,
+          expense_type: expense_type,
+          category: rawTx.category || 'Manual Review',
+          subcategory: null
+        });
+        
+        // Mark as processed
+        await db.query(
+          'UPDATE raw_transactions SET processed = true, updated_at = NOW() WHERE id = $1',
+          [id]
+        );
+      }
       
       await db.query('COMMIT');
+      
+      // Automatically create payment requests for utility bills
+      if (['electricity', 'water'].includes(expense_type)) {
+        try {
+          const expenseResult = await db.query(
+            'SELECT * FROM expenses WHERE plaid_transaction_id = $1',
+            [`simplefin_${rawTx.simplefin_id}`]
+          );
+          
+          if (expenseResult.rows.length > 0) {
+            await paymentRequestService.createUtilityPaymentRequests(expenseResult.rows[0]);
+            console.log(`Created payment requests for ${expense_type} bill`);
+          }
+        } catch (err) {
+          console.error('Error creating payment requests:', err);
+          // Don't fail the approval if payment request creation fails
+        }
+      }
       
       res.json({ 
         success: true, 
@@ -127,12 +177,28 @@ router.post('/exclude/:id', async (req, res) => {
 // Bulk approve transactions
 router.post('/bulk-approve', async (req, res) => {
   try {
-    const { transaction_ids, expense_type } = req.body;
+    const { transaction_ids, expense_type, bulk_type } = req.body;
     
-    console.log('Bulk approve request:', { transaction_ids, expense_type });
+    console.log('Bulk approve request:', { transaction_ids, expense_type, bulk_type });
     
-    if (!Array.isArray(transaction_ids) || transaction_ids.length === 0) {
-      return res.status(400).json({ error: 'No transactions provided' });
+    let targetTransactionIds = transaction_ids;
+    
+    // If bulk_type is provided, fetch ALL pending transactions of that type
+    if (bulk_type) {
+      const allTransactions = await db.query(`
+        SELECT id
+        FROM raw_transactions 
+        WHERE processed = false 
+          AND excluded = false 
+          AND suggested_expense_type = $1
+      `, [bulk_type]);
+      
+      targetTransactionIds = allTransactions.rows.map(t => t.id);
+      console.log(`Found ${targetTransactionIds.length} total ${bulk_type} transactions to process`);
+    }
+    
+    if (!Array.isArray(targetTransactionIds) || targetTransactionIds.length === 0) {
+      return res.status(400).json({ error: 'No transactions to process' });
     }
     
     await db.query('BEGIN');
@@ -141,7 +207,10 @@ router.post('/bulk-approve', async (req, res) => {
       let approved = 0;
       let errors = [];
       
-      for (const id of transaction_ids) {
+      // Use bulk_type as expense_type if provided, otherwise use the passed expense_type
+      const finalExpenseType = bulk_type || expense_type;
+      
+      for (const id of targetTransactionIds) {
         try {
           // Get the raw transaction
           const rawTx = await db.getOne(
@@ -164,24 +233,83 @@ router.post('/bulk-approve', async (req, res) => {
                 [id]
               );
             } else {
-              // Insert into main transactions
-              await db.insert('transactions', {
-                plaid_transaction_id: `simplefin_${rawTx.simplefin_id}`,
-                plaid_account_id: rawTx.simplefin_account_id,
-                amount: Math.abs(rawTx.amount),
-                date: rawTx.posted_date,
-                name: rawTx.description,
-                merchant_name: rawTx.suggested_merchant || rawTx.payee,
-                expense_type: expense_type || rawTx.suggested_expense_type || 'other',
-                category: rawTx.category || 'Bulk Approved',
-                subcategory: null
-              });
-              
-              // Mark as processed
-              await db.query(
-                'UPDATE raw_transactions SET processed = true, updated_at = NOW() WHERE id = $1',
-                [id]
-              );
+              // Only process expenses (negative amounts)
+              if (rawTx.amount > 0) {
+                // Exclude deposits
+                await db.query(
+                  `UPDATE raw_transactions 
+                   SET excluded = true, 
+                       exclude_reason = 'Bank deposit - income tracked via payment requests',
+                       processed = true,
+                       updated_at = NOW() 
+                   WHERE id = $1`,
+                  [id]
+                );
+              } else {
+                // Insert expense into expenses table
+                const newExpense = await db.insert('expenses', {
+                  plaid_transaction_id: `simplefin_${rawTx.simplefin_id}`,
+                  plaid_account_id: rawTx.simplefin_account_id,
+                  amount: Math.abs(rawTx.amount),
+                  date: rawTx.posted_date,
+                  name: rawTx.description,
+                  merchant_name: rawTx.suggested_merchant || rawTx.payee,
+                  expense_type: finalExpenseType || rawTx.suggested_expense_type || 'other',
+                  category: rawTx.category || 'Bulk Approved',
+                  subcategory: null
+                });
+                
+                // Mark as processed
+                await db.query(
+                  'UPDATE raw_transactions SET processed = true, updated_at = NOW() WHERE id = $1',
+                  [id]
+                );
+                
+                // Automatically create payment requests for electricity and water bills only
+                // Internet (Comcast) is NOT split among roommates
+                if (['electricity', 'water'].includes(finalExpenseType)) {
+                  try {
+                    // First create a utility_bill record
+                    const billDate = new Date(rawTx.posted_date);
+                    const utilityBill = await db.insert('utility_bills', {
+                      transaction_id: newExpense.id,
+                      bill_type: finalExpenseType,
+                      total_amount: Math.abs(rawTx.amount),
+                      split_amount: (Math.abs(rawTx.amount) / 3).toFixed(2),
+                      month: billDate.getMonth() + 1,
+                      year: billDate.getFullYear(),
+                      payment_requested: false
+                    });
+                    
+                    // Now create payment requests using the utility_bill
+                    const expenseWithBillId = { ...newExpense, utility_bill_id: utilityBill.id };
+                    await paymentRequestService.createUtilityPaymentRequests(expenseWithBillId);
+                    console.log(`Created utility bill and payment requests for ${finalExpenseType} (Bill ID: ${utilityBill.id})`);
+                  } catch (err) {
+                    console.error(`Error creating payment requests for ${finalExpenseType} bill:`, err);
+                    // Don't fail the approval if payment request creation fails
+                  }
+                }
+                
+                // For internet bills, still create utility_bills entry but NO payment requests
+                if (finalExpenseType === 'internet') {
+                  try {
+                    const billDate = new Date(rawTx.posted_date);
+                    await db.insert('utility_bills', {
+                      transaction_id: newExpense.id,
+                      bill_type: finalExpenseType,
+                      total_amount: Math.abs(rawTx.amount),
+                      split_amount: Math.abs(rawTx.amount), // No split for internet
+                      month: billDate.getMonth() + 1,
+                      year: billDate.getFullYear(),
+                      payment_requested: false
+                    });
+                    console.log(`Created internet utility bill record (NO payment requests)`);
+                  } catch (err) {
+                    console.error(`Error creating internet utility bill:`, err);
+                  }
+                }
+              }
             }
             
             approved++;
@@ -207,6 +335,60 @@ router.post('/bulk-approve', async (req, res) => {
   } catch (error) {
     console.error('Error bulk approving transactions:', error);
     res.status(500).json({ error: error.message || 'Failed to bulk approve transactions' });
+  }
+});
+
+// Get count of pending transactions for bulk approval
+router.get('/bulk-count', async (req, res) => {
+  try {
+    const { type } = req.query;
+    
+    if (!type) {
+      return res.status(400).json({ error: 'Transaction type is required' });
+    }
+    
+    const result = await db.getOne(`
+      SELECT COUNT(*) as count
+      FROM raw_transactions 
+      WHERE processed = false 
+        AND excluded = false 
+        AND suggested_expense_type = $1
+    `, [type]);
+    
+    res.json({ 
+      count: parseInt(result.count),
+      type: type 
+    });
+  } catch (error) {
+    console.error('Error getting bulk count:', error);
+    res.status(500).json({ error: 'Failed to get transaction count' });
+  }
+});
+
+// Get all pending transaction types with counts (for summary cards)
+router.get('/pending-summary', async (req, res) => {
+  try {
+    const result = await db.query(`
+      SELECT 
+        suggested_expense_type,
+        COUNT(*) as count
+      FROM raw_transactions 
+      WHERE processed = false 
+        AND excluded = false 
+        AND suggested_expense_type IS NOT NULL
+      GROUP BY suggested_expense_type
+      ORDER BY count DESC
+    `);
+    
+    const summary = {};
+    result.rows.forEach(row => {
+      summary[row.suggested_expense_type || 'uncategorized'] = parseInt(row.count);
+    });
+    
+    res.json(summary);
+  } catch (error) {
+    console.error('Error getting pending summary:', error);
+    res.status(500).json({ error: 'Failed to get pending summary' });
   }
 });
 

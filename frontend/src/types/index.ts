@@ -48,7 +48,7 @@ export interface PaymentRequest {
   status: 'pending' | 'sent' | 'paid' | 'foregone';
   venmo_link: string;
   venmo_web_link?: string; // Optional web link for desktop
-  bill_type: 'electricity' | 'water' | null;
+  bill_type: 'electricity' | 'water' | 'rent' | 'internet' | 'landscape' | string | null;
   month: number | null;
   year: number | null;
   merchant_name?: string | null;

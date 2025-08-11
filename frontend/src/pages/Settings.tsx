@@ -18,6 +18,7 @@ import {
 } from '@mui/icons-material';
 import axios from 'axios';
 import config from '../config';
+import EstimatedTaxes from '../components/EstimatedTaxes';
 
 export default function Settings() {
   const [hasSimpleFin, setHasSimpleFin] = useState(false);
@@ -136,6 +137,11 @@ export default function Settings() {
           </Card>
         </Grid>
       </Grid>
+
+      {/* Estimated Taxes Section */}
+      <Box sx={{ mt: 3 }}>
+        <EstimatedTaxes />
+      </Box>
 
       {/* About Section */}
       <Card sx={{ mt: 3 }}>

@@ -109,6 +109,7 @@ export default function Dashboard() {
   const [summary, setSummary] = useState<ExpenseSummary[]>([]);
   const [ytdTotals, setYtdTotals] = useState<any>(null);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
+  const [recentIncome, setRecentIncome] = useState<any[]>([]);
   const [pendingPayments, setPendingPayments] = useState<PaymentRequest[]>([]);
   const [monthlyData, setMonthlyData] = useState<any[]>([]);
   const [syncingBank, setSyncingBank] = useState(false);
@@ -155,11 +156,16 @@ export default function Dashboard() {
       const currentMonth = new Date().getMonth() + 1;
 
       // Fetch all data in parallel
-      const [summaryRes, transactionsRes, paymentsRes, monthlyRes] = await Promise.all([
+      const [summaryRes, transactionsRes, incomeRes, paymentsRes, monthlyRes] = await Promise.all([
         apiService.getSummary(currentYear), // Year only for YTD summary
         apiService.getTransactions({ 
           start_date: new Date(currentYear, 0, 1).toISOString().split('T')[0], // Start of year
           end_date: new Date().toISOString().split('T')[0], // Today
+        }),
+        apiService.getLedger({ 
+          start_date: new Date(currentYear, 0, 1).toISOString().split('T')[0],
+          end_date: new Date().toISOString().split('T')[0],
+          type: 'income' 
         }),
         apiService.getPaymentRequests({ status: 'pending,sent' }),
         apiService.getMonthlyComparison(currentYear),
@@ -179,6 +185,7 @@ export default function Dashboard() {
         (tx: Transaction) => tx.expense_type !== 'other' && tx.expense_type !== 'rent' && tx.expense_type !== 'utility_reimbursement'
       );
       setRecentTransactions(expenseTransactions);
+      setRecentIncome(incomeRes.data.entries || []);
       setPendingPayments(paymentsRes.data);
       setMonthlyData(monthlyRes.data);
     } catch (err) {
@@ -600,7 +607,65 @@ export default function Dashboard() {
           </Card>
         </Grid>
 
-        {/* Recent Transactions */}
+        {/* Recent Income */}
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Income YTD
+              </Typography>
+              {recentIncome.length > 0 ? (
+                <Box sx={{ height: 300, overflowY: 'auto' }}>
+                  {recentIncome.map((income) => (
+                    <Box
+                      key={`income-${income.id}`}
+                      display="flex"
+                      justifyContent="space-between"
+                      alignItems="center"
+                      py={1}
+                      px={1}
+                      borderBottom="1px solid #eee"
+                      sx={{ '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.04)' } }}
+                    >
+                      <Box flex={1} minWidth={0}>
+                        <Typography variant="body2" noWrap>{income.description}</Typography>
+                        <Typography variant="caption" color="textSecondary">
+                          {format(new Date(income.date), 'MMM dd, yyyy')}
+                        </Typography>
+                      </Box>
+                      <Box display="flex" alignItems="center" gap={1} flexShrink={0}>
+                        <Chip
+                          label={income.category === 'rent' ? 'Rent' : income.category === 'utility_reimbursement' ? 'Utility Reimb.' : income.category}
+                          size="small"
+                          color={income.category === 'rent' ? 'success' : 'info'}
+                          sx={{ minWidth: 100 }}
+                        />
+                        <Typography
+                          variant="body2"
+                          color="success.main"
+                          sx={{ minWidth: 80, textAlign: 'right' }}
+                        >
+                          +{formatCurrency(parseFloat(income.amount))}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  ))}
+                  <Box py={1} px={1} sx={{ position: 'sticky', bottom: 0, backgroundColor: 'background.paper', borderTop: '2px solid #eee' }}>
+                    <Typography variant="caption" color="textSecondary">
+                      {recentIncome.length} income entries total
+                    </Typography>
+                  </Box>
+                </Box>
+              ) : (
+                <Typography variant="body2" color="textSecondary">
+                  No income records
+                </Typography>
+              )}
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Recent Expenses */}
         <Grid item xs={12} md={6}>
           <Card>
             <CardContent>
@@ -638,7 +703,7 @@ export default function Dashboard() {
                           color="text.primary"
                           sx={{ minWidth: 80, textAlign: 'right' }}
                         >
-                          {formatCurrency(transaction.amount)}
+                          -{formatCurrency(transaction.amount)}
                         </Typography>
                       </Box>
                     </Box>

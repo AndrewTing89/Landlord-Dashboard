@@ -1,6 +1,7 @@
 const axios = require('axios');
 const db = require('../db/connection');
 const moment = require('moment');
+const paymentRequestService = require('./paymentRequestService');
 
 class SimpleFINService {
   constructor() {
@@ -162,20 +163,34 @@ class SimpleFINService {
         );
 
         if (!existing) {
-          // Apply ETL rules to get suggestions
-          const suggestions = await this.applyETLRules(transaction);
-          
           // SimpleFIN provides amount as negative for debits
           const amount = Math.abs(transaction.amount);
           
           // Convert Unix timestamp to date string
           const dateString = new Date(transaction.posted * 1000).toISOString().split('T')[0];
           
-          // Save to raw_transactions for review
+          // Auto-exclude positive amounts (deposits/income)
+          // We track income through payment requests, not bank deposits
+          const isDeposit = transaction.amount > 0;
+          let suggestions = { 
+            excluded: isDeposit,
+            exclude_reason: isDeposit ? 'Bank deposit - income tracked via payment requests' : null,
+            expense_type: null,
+            merchant: null,
+            confidence: isDeposit ? 1.0 : 0,
+            auto_approve: false
+          };
+          
+          // Only apply ETL rules for expenses (negative amounts)
+          if (!isDeposit) {
+            suggestions = await this.applyETLRules(transaction);
+          }
+          
+          // Save ALL transactions to raw_transactions for review
           await db.insert('raw_transactions', {
             simplefin_id: transaction.id,
             simplefin_account_id: accountId,
-            amount: transaction.amount, // Keep original sign for ETL rules
+            amount: transaction.amount, // Keep original sign for reference
             posted_date: dateString,
             description: transaction.description,
             payee: transaction.payee,
@@ -185,13 +200,14 @@ class SimpleFINService {
             confidence_score: suggestions.confidence,
             excluded: suggestions.excluded,
             exclude_reason: suggestions.exclude_reason,
-            processed: suggestions.auto_approve || false
+            processed: suggestions.auto_approve || isDeposit // Mark deposits as processed
           });
 
-          // If auto-approved by rules, also insert into main transactions table
-          if (suggestions.auto_approve && !suggestions.excluded) {
+          // Only auto-approve EXPENSES (negative amounts) to expenses table
+          if (suggestions.auto_approve && !suggestions.excluded && transaction.amount < 0) {
             console.log(`[Auto-Approve] ${transaction.description} -> ${suggestions.expense_type}`);
-            await db.insert('transactions', {
+            
+            const expense = await db.insert('expenses', {
               plaid_transaction_id: `simplefin_${transaction.id}`,
               plaid_account_id: accountId,
               amount: amount,
@@ -202,6 +218,16 @@ class SimpleFINService {
               category: transaction.category || 'Other',
               subcategory: null
             });
+            
+            // Automatically create payment requests for utility bills
+            if (['electricity', 'water'].includes(suggestions.expense_type)) {
+              try {
+                await paymentRequestService.createUtilityPaymentRequests(expense);
+                console.log(`[Payment Requests] Created for ${suggestions.expense_type} bill`);
+              } catch (err) {
+                console.error('Error creating payment requests:', err);
+              }
+            }
           }
 
           savedCount++;

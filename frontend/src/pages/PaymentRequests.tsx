@@ -159,32 +159,46 @@ export default function PaymentRequests() {
       setLoading(true);
       setError(null);
       
-      // Fetch all data in parallel
-      const [requestsRes, emailsRes, unmatchedRes] = await Promise.all([
-        apiService.getPaymentRequests(),
-        axios.get(`${config.api.baseURL}/api/venmo-emails`),
-        axios.get(`${config.api.baseURL}/api/gmail/unmatched`)
-      ]);
-
+      // Fetch payment requests first (critical data)
+      const requestsRes = await apiService.getPaymentRequests();
       const requests = requestsRes.data || [];
-      const emails = emailsRes.data || [];
-      const unmatched = unmatchedRes.data?.data || [];
-
+      
+      console.log('Payment requests received:', requests);
+      console.log('Payment requests count:', requests.length);
       setPaymentRequests(requests);
-      setAllEmails(emails);
-      setUnmatchedEmails(unmatched);
-
-      // Group emails by payment request
-      const emailsMap: Record<number, VenmoEmail[]> = {};
-      emails.forEach((email: VenmoEmail) => {
-        if (email.payment_request_id) {
-          if (!emailsMap[email.payment_request_id]) {
-            emailsMap[email.payment_request_id] = [];
+      
+      // Fetch optional data (don't block if these fail)
+      try {
+        const emailsRes = await axios.get(`${config.api.baseURL}/api/venmo-emails`);
+        const emails = emailsRes.data || [];
+        setAllEmails(emails);
+        
+        // Group emails by payment request
+        const emailsMap: Record<number, VenmoEmail[]> = {};
+        emails.forEach((email: VenmoEmail) => {
+          if (email.payment_request_id) {
+            if (!emailsMap[email.payment_request_id]) {
+              emailsMap[email.payment_request_id] = [];
+            }
+            emailsMap[email.payment_request_id].push(email);
           }
-          emailsMap[email.payment_request_id].push(email);
-        }
-      });
-      setEmailsByRequest(emailsMap);
+        });
+        setEmailsByRequest(emailsMap);
+      } catch (emailErr) {
+        console.warn('Failed to fetch Venmo emails (non-critical):', emailErr);
+        // Continue without emails
+      }
+      
+      // Try to fetch unmatched emails (also optional)
+      try {
+        const unmatchedRes = await axios.get(`${config.api.baseURL}/api/gmail/unmatched`);
+        const unmatched = unmatchedRes.data?.data || [];
+        setUnmatchedEmails(unmatched);
+      } catch (unmatchedErr) {
+        console.warn('Failed to fetch unmatched emails (non-critical):', unmatchedErr);
+        // Continue without unmatched emails
+      }
+      
     } catch (err) {
       console.error('Error fetching payment requests:', err);
       setError('Failed to load payment requests');
@@ -481,15 +495,24 @@ export default function PaymentRequests() {
 
   // Group requests by month - only show pending requests in active tab
   const activeRequests = paymentRequests.filter(r => r.status === 'pending' || r.status === 'sent');
+  console.log('Active requests (pending or sent):', activeRequests);
+  console.log('Active requests count:', activeRequests.length);
+  
   const groupedRequests = activeRequests.reduce((acc, request) => {
     // Use the bill's month/year for grouping
-    const year = request.year;
-    const month = request.month;
+    let year = request.year;
+    let month = request.month;
     
-    // Skip if no month/year data
+    // If no month/year data, extract from charge_date
     if (!year || !month) {
-      console.warn('Payment request missing month/year:', request);
-      return acc;
+      if (request.charge_date) {
+        const date = new Date(request.charge_date);
+        year = date.getFullYear();
+        month = date.getMonth() + 1; // getMonth() returns 0-11
+      } else {
+        console.warn('Payment request missing month/year and charge_date:', request);
+        return acc;
+      }
     }
     
     const key = `${year}-${month.toString().padStart(2, '0')}`; // Pad month for proper sorting
@@ -499,6 +522,9 @@ export default function PaymentRequests() {
     acc[key].push(request);
     return acc;
   }, {} as Record<string, PaymentRequest[]>);
+  
+  console.log('Grouped requests:', groupedRequests);
+  console.log('Grouped requests keys:', Object.keys(groupedRequests));
 
   if (loading) {
     return (
@@ -595,11 +621,14 @@ export default function PaymentRequests() {
             </Alert>
           )}
 
+          {/* Debug info */}
+          {console.log('Rendering tab 0, activeRequests:', activeRequests.length, 'groupedRequests:', Object.keys(groupedRequests).length)}
+
           {Object.entries(groupedRequests).length === 0 ? (
             <Card>
               <CardContent>
                 <Typography variant="body1" color="textSecondary" align="center">
-                  No payment requests found. They will appear here after utility bills are processed.
+                  No active payment requests found. Total requests: {paymentRequests.length}, Active (pending/sent): {activeRequests.length}
                 </Typography>
               </CardContent>
             </Card>
@@ -619,6 +648,16 @@ export default function PaymentRequests() {
             const [year, month] = monthKey.split('-');
             const monthName = format(new Date(parseInt(year), parseInt(month) - 1), 'MMMM yyyy');
             
+            // Group requests by roommate for this month
+            const requestsByRoommate = requests.reduce((acc, request) => {
+              const roommate = request.roommate_name || 'Unknown';
+              if (!acc[roommate]) {
+                acc[roommate] = [];
+              }
+              acc[roommate].push(request);
+              return acc;
+            }, {} as Record<string, PaymentRequest[]>);
+            
             return (
               <Card key={monthKey} sx={{ mb: 3 }}>
                 <CardContent>
@@ -626,23 +665,92 @@ export default function PaymentRequests() {
                     {monthName}
                   </Typography>
                   
-                  <Grid container spacing={2}>
-                    {requests.map((request) => (
-                      <Grid item xs={12} sm={6} md={4} key={request.id}>
-                        <Card variant="outlined">
-                          <CardContent>
-                            <Box display="flex" justifyContent="space-between" alignItems="start" mb={1}>
-                              <Box>
-                                <Typography variant="body2" color="textSecondary">
-                                  {request.roommate_name}
-                                </Typography>
-                                <Typography variant="h5">
-                                  {formatCurrency(request.amount)}
-                                </Typography>
-                                <Typography variant="caption" color="textSecondary">
-                                  of {formatCurrency(request.bill_total_amount || 0)} total
-                                </Typography>
-                              </Box>
+                  {/* Month summary */}
+                  <Box sx={{ mb: 3, p: 2, backgroundColor: 'grey.100', borderRadius: 1 }}>
+                    <Typography variant="subtitle2" color="textSecondary" gutterBottom>
+                      Monthly Summary
+                    </Typography>
+                    <Grid container spacing={2}>
+                      {['Ushi Lo', 'Eileen'].map((roommate) => {
+                        const roommateReqs = requestsByRoommate[roommate] || [];
+                        if (roommateReqs.length === 0) return null;
+                        
+                        const totalAmount = roommateReqs.reduce((sum, req) => sum + parseFloat(req.amount), 0);
+                        const isUshi = roommate === 'Ushi Lo';
+                        
+                        return (
+                          <Grid item key={roommate}>
+                            <Typography variant="body2" sx={{ 
+                              color: isUshi ? 'secondary.main' : 'primary.main',
+                              fontWeight: 600
+                            }}>
+                              <strong>{roommate}:</strong> {formatCurrency(totalAmount)}
+                            </Typography>
+                          </Grid>
+                        );
+                      })}
+                    </Grid>
+                  </Box>
+                  
+                  <Grid container spacing={3}>
+                    {/* Consistent roommate order: Ushi Lo (left, pink), Eileen (right, blue) */}
+                    {['Ushi Lo', 'Eileen'].map((roommateName, index) => {
+                      const roommateRequests = requestsByRoommate[roommateName] || [];
+                      
+                      // Skip if no requests for this roommate in this month
+                      if (roommateRequests.length === 0) return null;
+                      
+                      // Fixed colors: Ushi Lo = pink, Eileen = blue
+                      const colorScheme = index === 0 ? 'secondary' : 'primary'; // secondary = pink, primary = blue
+                      
+                      return (
+                        <Grid item xs={12} md={6} key={roommateName}>
+                          <Box sx={{ 
+                            p: 2, 
+                            border: '2px solid', 
+                            borderColor: `${colorScheme}.light`, 
+                            borderRadius: 2, 
+                            backgroundColor: `${colorScheme}.50`,
+                            '&:hover': {
+                              borderColor: `${colorScheme}.main`,
+                              backgroundColor: `${colorScheme}.100`
+                            }
+                          }}>
+                            <Typography variant="h6" sx={{ 
+                              mb: 2, 
+                              color: `${colorScheme}.dark`, 
+                              fontWeight: 600,
+                              textAlign: 'center',
+                              pb: 1,
+                              borderBottom: '2px solid',
+                              borderColor: `${colorScheme}.main`
+                            }}>
+                              {roommateName}
+                            </Typography>
+                          <Grid container spacing={2}>
+                            {roommateRequests.map((request) => (
+                              <Grid item xs={12} key={request.id}>
+                                <Card variant="outlined" sx={{ 
+                                  border: '2px solid', 
+                                  borderColor: `${colorScheme}.light`,
+                                  '&:hover': {
+                                    borderColor: `${colorScheme}.main`,
+                                    boxShadow: 2
+                                  }
+                                }}>
+                                  <CardContent>
+                                    <Box display="flex" justifyContent="space-between" alignItems="start" mb={1}>
+                                      <Box>
+                                        <Typography variant="body1" color="textSecondary">
+                                          {getBillTypeChip(request.bill_type)}
+                                        </Typography>
+                                        <Typography variant="h5" sx={{ mt: 1 }}>
+                                          {formatCurrency(request.amount)}
+                                        </Typography>
+                                        <Typography variant="caption" color="textSecondary">
+                                          of {formatCurrency(request.bill_total_amount || 0)} total
+                                        </Typography>
+                                      </Box>
                               <Box display="flex" gap={0.5} alignItems="center">
                                 {/* Show email match indicator */}
                                 {emailsByRequest[request.id] && emailsByRequest[request.id].length > 0 && (
@@ -778,10 +886,15 @@ export default function PaymentRequests() {
                                 Open in Venmo
                               </Button>
                             </Box>
-                          </CardContent>
-                        </Card>
-                      </Grid>
-                    ))}
+                                  </CardContent>
+                                </Card>
+                              </Grid>
+                            ))}
+                          </Grid>
+                          </Box>
+                        </Grid>
+                      );
+                    })}
                   </Grid>
                 </CardContent>
               </Card>
@@ -1128,7 +1241,7 @@ export default function PaymentRequests() {
                             <>
                               {getBillTypeChip(request.bill_type)}
                               <Typography component="span" variant="body2" sx={{ ml: 1 }}>
-                                {request.month}/{request.year}
+                                {request.charge_date ? format(new Date(request.charge_date), 'MM/yyyy') : `${request.month || '-'}/${request.year || '-'}`}
                               </Typography>
                               {request.paid_date && (
                                 <Typography component="span" variant="body2" sx={{ ml: 2 }}>
@@ -1247,7 +1360,7 @@ export default function PaymentRequests() {
                         />
                       </TableCell>
                       <TableCell>
-                        {request.month && request.year ? `${request.month}/${request.year}` : '-'}
+                        {request.charge_date ? format(new Date(request.charge_date), 'MM/yyyy') : '-'}
                       </TableCell>
                       <TableCell>
                         <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
@@ -1539,7 +1652,7 @@ export default function PaymentRequests() {
                     .filter(r => r.status !== 'paid')
                     .map(request => (
                       <MenuItem key={request.id} value={request.id}>
-                        {request.roommate_name} - ${request.amount} - {request.bill_type} ({request.month}/{request.year})
+                        {request.roommate_name} - ${request.amount} - {request.bill_type} ({request.charge_date ? format(new Date(request.charge_date), 'MM/yyyy') : `${request.month || '-'}/${request.year || '-'}`})
                       </MenuItem>
                     ))}
                 </Select>

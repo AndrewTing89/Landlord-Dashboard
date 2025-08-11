@@ -67,14 +67,19 @@ export default function Review() {
   useEffect(() => {
     fetchPendingTransactions();
     fetchExpenseTypes();
-  }, [page, rowsPerPage]);
+    fetchGlobalSummary(); // Always fetch global summary regardless of displayed transactions
+  }, [page, rowsPerPage, filterCategory]); // Re-fetch when filter changes
 
   const fetchPendingTransactions = async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `http://localhost:3002/api/review/pending?limit=${rowsPerPage}&offset=${page * rowsPerPage}`
-      );
+      
+      let url = `http://localhost:3002/api/review/pending?limit=${rowsPerPage}&offset=${page * rowsPerPage}`;
+      if (filterCategory && filterCategory !== 'uncategorized') {
+        url += `&type=${filterCategory}`;
+      }
+      
+      const response = await fetch(url);
       const data = await response.json();
       
       setTransactions(data.transactions);
@@ -173,13 +178,14 @@ export default function Review() {
   };
 
   const handleBulkApprove = async (type: string) => {
-    const transactionsToApprove = transactions.filter(
-      tx => tx.suggested_expense_type === type
-    );
+    const totalTransactionsOfType = globalSummary[type] || 0;
     
-    if (transactionsToApprove.length === 0) return;
+    if (totalTransactionsOfType === 0) {
+      setError('No pending transactions found for this type');
+      return;
+    }
     
-    const confirmMessage = `Approve all ${transactionsToApprove.length} ${type} transactions?`;
+    const confirmMessage = `Approve all ${totalTransactionsOfType} ${type} transactions across the entire database?`;
     if (!window.confirm(confirmMessage)) return;
     
     setLoading(true);
@@ -189,7 +195,7 @@ export default function Review() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          transaction_ids: transactionsToApprove.map(tx => tx.id),
+          bulk_type: type,  // Use bulk_type to process ALL transactions of this type
           expense_type: type
         })
       });
@@ -202,12 +208,11 @@ export default function Review() {
       const result = await response.json();
       setSuccess(result.message);
       
-      // Remove approved transactions from the list
-      const approvedIds = transactionsToApprove.map(tx => tx.id);
-      setTransactions(transactions.filter(t => !approvedIds.includes(t.id)));
-      setTotal(total - approvedIds.length);
+      // Refresh both the transaction list and global summary
+      await fetchPendingTransactions();
+      await fetchGlobalSummary();
       
-      // Clear filter if all transactions of this type were approved
+      // Clear filter if we just approved all transactions of this type
       if (filterCategory === type) {
         setFilterCategory(null);
       }
@@ -226,6 +231,24 @@ export default function Review() {
       byType[type] = (byType[type] || 0) + 1;
     });
     return byType;
+  };
+
+  const [globalSummary, setGlobalSummary] = useState<{ [key: string]: number }>({});
+
+  const fetchGlobalSummary = async () => {
+    try {
+      console.log('Fetching global summary...');
+      const response = await fetch(`http://localhost:3002/api/review/pending-summary`);
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Global summary data:', data);
+        setGlobalSummary(data);
+      } else {
+        console.error('Failed to fetch global summary, status:', response.status);
+      }
+    } catch (error) {
+      console.error('Error fetching global summary:', error);
+    }
   };
 
   const formatCurrency = (amount: number) => {
@@ -251,18 +274,19 @@ export default function Review() {
     );
   }
 
-  const typesSummary = getTransactionsByType();
+  const typesSummary = getTransactionsByType(); // Displayed transactions
   
-  // Filter transactions based on selected category
-  const filteredTransactions = filterCategory
-    ? transactions.filter(tx => (tx.suggested_expense_type || 'uncategorized') === filterCategory)
-    : transactions;
+  // No need to filter here - backend handles the filtering
+  const filteredTransactions = transactions;
+
+  // Calculate total pending from global summary
+  const totalGlobalPending = Object.values(globalSummary).reduce((sum, count) => sum + count, 0);
 
   return (
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
         <Typography variant="h4">Review Transactions</Typography>
-        <Badge badgeContent={total} color="primary" max={999}>
+        <Badge badgeContent={totalGlobalPending || total} color="primary" max={999}>
           <ReviewIcon fontSize="large" />
         </Badge>
       </Box>
@@ -297,7 +321,10 @@ export default function Review() {
         {filterCategory && (
           <Button
             variant="text"
-            onClick={() => setFilterCategory(null)}
+            onClick={() => {
+              setFilterCategory(null);
+              setPage(0); // Reset to first page
+            }}
             sx={{ mb: 1 }}
           >
             Clear Filter ({filterCategory})
@@ -305,43 +332,101 @@ export default function Review() {
         )}
       </Box>
       <Box display="flex" gap={2} mb={3} flexWrap="wrap">
-        {Object.entries(typesSummary).map(([type, count]) => (
-          <Card 
-            key={type} 
-            sx={{ 
-              minWidth: 150,
-              cursor: 'pointer',
-              transition: 'all 0.2s',
-              border: filterCategory === type ? 2 : 0,
-              borderColor: 'primary.main',
-              '&:hover': {
-                transform: 'translateY(-2px)',
-                boxShadow: 3
-              }
-            }}
-            onClick={() => setFilterCategory(filterCategory === type ? null : type)}
-          >
-            <CardContent>
-              <Typography variant="h6">{count}</Typography>
-              <Typography variant="body2" color="textSecondary" gutterBottom>
-                {type || 'uncategorized'}
-              </Typography>
-              {count > 1 && type !== 'uncategorized' && (
-                <Button
-                  size="small"
-                  variant="outlined"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleBulkApprove(type);
-                  }}
-                  startIcon={<CheckCircleIcon />}
-                >
-                  Approve All
-                </Button>
-              )}
-            </CardContent>
-          </Card>
-        ))}
+        {/* Use global summary if available, otherwise fall back to displayed transactions */}
+        {Object.keys(globalSummary).length > 0 ? (
+          // Show cards based on global database counts
+          Object.entries(globalSummary).map(([type, globalCount]) => {
+            const displayedCount = typesSummary[type] || 0;
+            
+            return (
+              <Card 
+                key={type} 
+                sx={{ 
+                  minWidth: 150,
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                  border: filterCategory === type ? 2 : 0,
+                  borderColor: 'primary.main',
+                  '&:hover': {
+                    transform: 'translateY(-2px)',
+                    boxShadow: 3
+                  }
+                }}
+                onClick={() => {
+                  const newFilter = filterCategory === type ? null : type;
+                  setFilterCategory(newFilter);
+                  setPage(0); // Reset to first page when changing filter
+                }}
+              >
+                <CardContent>
+                  <Typography variant="h6">
+                    {globalCount}
+                    {displayedCount > 0 && displayedCount !== globalCount && (
+                      <Typography component="span" variant="body2" color="text.secondary">
+                        {' '}({displayedCount} shown)
+                      </Typography>
+                    )}
+                  </Typography>
+                  <Typography variant="body2" color="textSecondary" gutterBottom>
+                    {type || 'uncategorized'}
+                  </Typography>
+                  {globalCount > 0 && type !== 'uncategorized' && (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleBulkApprove(type);
+                      }}
+                      startIcon={<CheckCircleIcon />}
+                    >
+                      Approve All ({globalCount})
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })
+        ) : (
+          // Fallback: Show cards based on displayed transactions (old behavior)
+          Object.entries(typesSummary).map(([type, displayedCount]) => (
+            <Card 
+              key={type} 
+              sx={{ 
+                minWidth: 150,
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                border: filterCategory === type ? 2 : 0,
+                borderColor: 'primary.main',
+                '&:hover': {
+                  transform: 'translateY(-2px)',
+                  boxShadow: 3
+                }
+              }}
+              onClick={() => setFilterCategory(filterCategory === type ? null : type)}
+            >
+              <CardContent>
+                <Typography variant="h6">{displayedCount}</Typography>
+                <Typography variant="body2" color="textSecondary" gutterBottom>
+                  {type || 'uncategorized'}
+                </Typography>
+                {displayedCount > 0 && type !== 'uncategorized' && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleBulkApprove(type);
+                    }}
+                    startIcon={<CheckCircleIcon />}
+                  >
+                    Approve All
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          ))
+        )}
       </Box>
 
       {/* Transactions Table */}
