@@ -10,8 +10,8 @@ export const CATEGORY_COLORS: Record<string, string> = {
   // Property expenses  
   supplies: '#FF5722', // Deep Orange (renamed from maintenance)
   maintenance: '#FF5722', // Deep Orange (keeping for backward compatibility)
-  cleaning_maintenance: '#F8BBD0', // Pale Pink (renamed from landscape)
-  landscape: '#F8BBD0', // Pale Pink (keeping for backward compatibility)
+  cleaning_maintenance: '#2E7D32', // Dark Forest Green (renamed from landscape)
+  landscape: '#2E7D32', // Dark Forest Green (keeping for backward compatibility)
   property_tax: '#D32F2F', // Dark Red
   insurance: '#FF6F00', // Amber-Orange
   
