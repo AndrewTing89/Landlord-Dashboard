@@ -416,16 +416,43 @@ app.get('/api/summary', async (req, res) => {
            AND income_type = 'utility_reimbursement'`
       );
       
+      // Get actual property tax paid for the year
+      const propertyTaxResult = await db.getOne(
+        `SELECT SUM(amount) as property_tax
+         FROM expenses
+         WHERE EXTRACT(YEAR FROM date) = 2025
+           AND expense_type = 'property_tax'`
+      );
+      
+      // Get estimated property tax from settings
+      const estimatedTaxResult = await db.getOne(
+        `SELECT estimated_amount
+         FROM estimated_taxes
+         WHERE tax_year = 2025
+         ORDER BY updated_at DESC
+         LIMIT 1`
+      );
+      
       const actualRentIncome = parseFloat(rentIncomeResult.rent_income || 0);
       const utilityReimbursements = parseFloat(reimbursementsResult.reimbursements || 0);
       const totalExpenses = parseFloat(expensesResult.total_expenses || 0);
+      const actualPropertyTaxPaid = parseFloat(propertyTaxResult.property_tax || 0);
+      
+      // Use estimated tax from settings, fallback to actual paid, then fallback to 8000
+      const estimatedAnnualPropertyTax = estimatedTaxResult?.estimated_amount 
+        ? parseFloat(estimatedTaxResult.estimated_amount)
+        : (actualPropertyTaxPaid > 0 ? actualPropertyTaxPaid : 8000);
+      
+      const netIncome = actualRentIncome + utilityReimbursements - totalExpenses;
+      const netIncomeAfterTax = netIncome - estimatedAnnualPropertyTax;
       
       ytdTotals = {
         totalExpenses: totalExpenses,
         actualRentIncome: actualRentIncome,
         utilityReimbursements: utilityReimbursements,
-        // Net income now uses actual rent collected, not expected
-        netIncome: actualRentIncome + utilityReimbursements - totalExpenses
+        netIncome: netIncome,
+        propertyTax: estimatedAnnualPropertyTax,
+        netIncomeAfterTax: netIncomeAfterTax
       };
     }
     

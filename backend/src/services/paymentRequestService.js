@@ -29,7 +29,15 @@ class PaymentRequestService {
 
       // Split the bill 3 ways
       const splitAmount = (amount / 3).toFixed(2);
-      const month = new Date(date).toISOString().substring(0, 7);
+      
+      // Get month and year from the date
+      const billDate = new Date(date);
+      const year = billDate.getFullYear();
+      const month = billDate.getMonth() + 1; // 1-12
+      const monthName = billDate.toLocaleString('default', { month: 'long' });
+      
+      // Capitalize the expense type for the tracking ID
+      const typeCapitalized = expense_type.charAt(0).toUpperCase() + expense_type.slice(1);
       
       const results = [];
       
@@ -40,6 +48,8 @@ class PaymentRequestService {
       // Create payment request for each roommate (excluding landlord)
       for (let i = 0; i < roommates.length; i++) {
         const roommate = roommates[i];
+        const trackingId = `${year}-${monthName}-${typeCapitalized}`;
+        
         let paymentRequest;
         try {
           paymentRequest = await db.insert('payment_requests', {
@@ -52,13 +62,24 @@ class PaymentRequestService {
             status: 'pending',
             amount: splitAmount,
             total_amount: amount,
+            tracking_id: trackingId,
+            month: month,
+            year: year,
             request_date: new Date(),
             created_at: new Date(),
             updated_at: new Date()
           });
           
-          // Generate Venmo link
-          const venmoLink = this.generateVenmoLink(splitAmount, expense_type, month);
+          // Generate proper Venmo request link (not payment link)
+          const venmoLink = this.generateVenmoRequestLink(
+            roommate.venmoUsername,
+            splitAmount,
+            expense_type,
+            monthName,
+            year,
+            trackingId
+          );
+          
           await db.query(
             'UPDATE payment_requests SET venmo_link = $1 WHERE id = $2',
             [venmoLink, paymentRequest.id]
@@ -75,7 +96,7 @@ class PaymentRequestService {
       }
       
       // Send Discord notification
-      await discordService.sendPaymentRequest(expense_type, amount, splitAmount, month);
+      await discordService.sendPaymentRequest(expense_type, amount, splitAmount, `${year}-${month.toString().padStart(2, '0')}`);
       
       console.log(`Created ${results.length} payment requests for ${expense_type} bill`);
       return results;
@@ -132,6 +153,20 @@ class PaymentRequestService {
     }
   }
 
+  generateVenmoRequestLink(venmoUsername, amount, type, monthName, year, trackingId) {
+    // Format the note similar to rent requests
+    const typeCapitalized = type.charAt(0).toUpperCase() + type.slice(1);
+    const note = `${typeCapitalized}\nMonth:${monthName}${year}\nAmount:$${amount}\nID:${trackingId}`;
+    const encodedNote = encodeURIComponent(note);
+    
+    // Remove @ symbol if present in username
+    const cleanUsername = venmoUsername.replace('@', '');
+    
+    // Use https://venmo.com format with txn=charge for requesting money
+    return `https://venmo.com/${cleanUsername}?txn=charge&amount=${amount}&note=${encodedNote}`;
+  }
+  
+  // Keep old method for backward compatibility
   generateVenmoLink(amount, type, month) {
     const description = `${type} reimbursement for ${month}`;
     const encodedDescription = encodeURIComponent(description);

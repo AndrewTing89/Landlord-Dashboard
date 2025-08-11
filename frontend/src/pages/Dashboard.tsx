@@ -36,7 +36,6 @@ import {
   Receipt as ReceiptIcon,
   AttachMoney as AttachMoneyIcon,
   Sync as SyncIcon,
-  Payment as PaymentIcon,
   Close as CloseIcon,
   Send as SendIcon,
   CheckCircle as CheckCircleIcon,
@@ -554,13 +553,20 @@ export default function Dashboard() {
               <Box display="flex" alignItems="center" justifyContent="space-between">
                 <Box>
                   <Typography color="textSecondary" gutterBottom variant="body2">
-                    Pending
+                    Net (After Tax)
                   </Typography>
-                  <Typography variant="h6">
-                    {pendingPayments.length}
+                  <Typography variant="h6" color={ytdTotals?.netIncomeAfterTax >= 0 ? 'success.main' : 'error.main'}>
+                    {ytdTotals ? formatCurrency(ytdTotals.netIncomeAfterTax) : '$0'}
+                  </Typography>
+                  <Typography variant="caption" color="textSecondary">
+                    Tax: {ytdTotals ? formatCurrency(ytdTotals.propertyTax) : '$11,000'}
                   </Typography>
                 </Box>
-                <PaymentIcon color="warning" fontSize="large" />
+                {ytdTotals?.netIncomeAfterTax >= 0 ? (
+                  <TrendingUpIcon color="success" fontSize="large" />
+                ) : (
+                  <TrendingDownIcon color="error" fontSize="large" />
+                )}
               </Box>
             </CardContent>
           </Card>
@@ -568,9 +574,97 @@ export default function Dashboard() {
       </Grid>
 
 
-      {/* Charts and Recent Activity */}
+      {/* Revenue vs Expenses Chart - Moved to top after cards */}
+      <Grid container spacing={3} mb={3}>
+        <Grid item xs={12}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                Revenue vs Expenses Comparison
+              </Typography>
+              <ResponsiveContainer width="100%" height={400}>
+                <BarChart
+                  data={getRevenueExpenseData()}
+                  margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
+                  onClick={handleMonthClick}
+                  style={{ cursor: 'pointer' }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="month" />
+                  <YAxis />
+                  <Tooltip 
+                    formatter={(value: number) => formatCurrency(value)}
+                    contentStyle={{ backgroundColor: '#f5f5f5' }}
+                  />
+                  <Legend />
+                  
+                  {/* Revenue Bars - stacked */}
+                  <Bar 
+                    dataKey="rent" 
+                    stackId="revenue"
+                    fill="#4CAF50"
+                    name="Rent"
+                  />
+                  <Bar 
+                    dataKey="reimbursements" 
+                    stackId="revenue"
+                    fill="#81C784"
+                    name="Reimbursements"
+                  />
+                  
+                  {/* Expense Bars - stacked */}
+                  <Bar 
+                    dataKey="electricity" 
+                    stackId="expenses"
+                    fill={COLORS.electricity}
+                    name="Electricity"
+                  />
+                  <Bar 
+                    dataKey="water" 
+                    stackId="expenses"
+                    fill={COLORS.water}
+                    name="Water"
+                  />
+                  <Bar 
+                    dataKey="internet" 
+                    stackId="expenses"
+                    fill={COLORS.internet}
+                    name="Internet"
+                  />
+                  <Bar 
+                    dataKey="maintenance" 
+                    stackId="expenses"
+                    fill={COLORS.maintenance}
+                    name="Maintenance"
+                  />
+                  <Bar 
+                    dataKey="landscape" 
+                    stackId="expenses"
+                    fill={COLORS.landscape}
+                    name="Landscape"
+                  />
+                  <Bar 
+                    dataKey="property_tax" 
+                    stackId="expenses"
+                    fill={COLORS.property_tax}
+                    name="Property Tax"
+                  />
+                  <Bar 
+                    dataKey="insurance" 
+                    stackId="expenses"
+                    fill={COLORS.insurance}
+                    name="Insurance"
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+
+      {/* Expense Pie Chart and YTD Table Side by Side */}
       <Grid container spacing={3}>
-        {/* Expense Breakdown Chart */}
+        {/* Expense Breakdown Pie Chart */}
         <Grid item xs={12} md={6}>
           <Card>
             <CardContent>
@@ -578,14 +672,14 @@ export default function Dashboard() {
                 Expense Breakdown
               </Typography>
               {chartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={300}>
+                <ResponsiveContainer width="100%" height={350}>
                   <PieChart>
                     <Pie
                       data={chartData}
                       cx="50%"
                       cy="50%"
                       labelLine={false}
-                      outerRadius={80}
+                      outerRadius={100}
                       fill="#8884d8"
                       dataKey="value"
                       label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
@@ -607,65 +701,7 @@ export default function Dashboard() {
           </Card>
         </Grid>
 
-        {/* Recent Income */}
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Income YTD
-              </Typography>
-              {recentIncome.length > 0 ? (
-                <Box sx={{ height: 300, overflowY: 'auto' }}>
-                  {recentIncome.map((income) => (
-                    <Box
-                      key={`income-${income.id}`}
-                      display="flex"
-                      justifyContent="space-between"
-                      alignItems="center"
-                      py={1}
-                      px={1}
-                      borderBottom="1px solid #eee"
-                      sx={{ '&:hover': { backgroundColor: 'rgba(0, 0, 0, 0.04)' } }}
-                    >
-                      <Box flex={1} minWidth={0}>
-                        <Typography variant="body2" noWrap>{income.description}</Typography>
-                        <Typography variant="caption" color="textSecondary">
-                          {format(new Date(income.date), 'MMM dd, yyyy')}
-                        </Typography>
-                      </Box>
-                      <Box display="flex" alignItems="center" gap={1} flexShrink={0}>
-                        <Chip
-                          label={income.category === 'rent' ? 'Rent' : income.category === 'utility_reimbursement' ? 'Utility Reimb.' : income.category}
-                          size="small"
-                          color={income.category === 'rent' ? 'success' : 'info'}
-                          sx={{ minWidth: 100 }}
-                        />
-                        <Typography
-                          variant="body2"
-                          color="success.main"
-                          sx={{ minWidth: 80, textAlign: 'right' }}
-                        >
-                          +{formatCurrency(parseFloat(income.amount))}
-                        </Typography>
-                      </Box>
-                    </Box>
-                  ))}
-                  <Box py={1} px={1} sx={{ position: 'sticky', bottom: 0, backgroundColor: 'background.paper', borderTop: '2px solid #eee' }}>
-                    <Typography variant="caption" color="textSecondary">
-                      {recentIncome.length} income entries total
-                    </Typography>
-                  </Box>
-                </Box>
-              ) : (
-                <Typography variant="body2" color="textSecondary">
-                  No income records
-                </Typography>
-              )}
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Recent Expenses */}
+        {/* Expenses YTD Scrolling Table */}
         <Grid item xs={12} md={6}>
           <Card>
             <CardContent>
@@ -673,7 +709,7 @@ export default function Dashboard() {
                 Expenses YTD
               </Typography>
               {recentTransactions.length > 0 ? (
-                <Box sx={{ height: 300, overflowY: 'auto' }}>
+                <Box sx={{ height: 350, overflowY: 'auto' }}>
                   {recentTransactions.map((transaction) => (
                     <Box
                       key={transaction.id}
@@ -840,92 +876,6 @@ export default function Dashboard() {
             </Card>
           </Grid>
         )}
-
-        {/* Revenue vs Expenses Chart */}
-        <Grid item xs={12}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Revenue vs Expenses Comparison
-              </Typography>
-              <ResponsiveContainer width="100%" height={400}>
-                <BarChart
-                  data={getRevenueExpenseData()}
-                  margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
-                  onClick={handleMonthClick}
-                  style={{ cursor: 'pointer' }}
-                >
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <Tooltip 
-                    formatter={(value: number) => formatCurrency(value)}
-                    contentStyle={{ backgroundColor: '#f5f5f5' }}
-                  />
-                  <Legend />
-                  
-                  {/* Revenue Bars - stacked */}
-                  <Bar 
-                    dataKey="rent" 
-                    stackId="revenue"
-                    fill="#4CAF50"
-                    name="Rent"
-                  />
-                  <Bar 
-                    dataKey="reimbursements" 
-                    stackId="revenue"
-                    fill="#81C784"
-                    name="Reimbursements"
-                  />
-                  
-                  {/* Expense Bars - stacked */}
-                  <Bar 
-                    dataKey="electricity" 
-                    stackId="expenses"
-                    fill={COLORS.electricity}
-                    name="Electricity"
-                  />
-                  <Bar 
-                    dataKey="water" 
-                    stackId="expenses"
-                    fill={COLORS.water}
-                    name="Water"
-                  />
-                  <Bar 
-                    dataKey="internet" 
-                    stackId="expenses"
-                    fill={COLORS.internet}
-                    name="Internet"
-                  />
-                  <Bar 
-                    dataKey="maintenance" 
-                    stackId="expenses"
-                    fill={COLORS.maintenance}
-                    name="Maintenance"
-                  />
-                  <Bar 
-                    dataKey="landscape" 
-                    stackId="expenses"
-                    fill={COLORS.landscape}
-                    name="Landscape"
-                  />
-                  <Bar 
-                    dataKey="property_tax" 
-                    stackId="expenses"
-                    fill={COLORS.property_tax}
-                    name="Property Tax"
-                  />
-                  <Bar 
-                    dataKey="insurance" 
-                    stackId="expenses"
-                    fill={COLORS.insurance}
-                    name="Insurance"
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        </Grid>
       </Grid>
 
       {/* Monthly Breakdown Dialog */}
