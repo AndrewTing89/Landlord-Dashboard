@@ -692,9 +692,6 @@ export default function PaymentRequests() {
                     {['Ushi Lo', 'Eileen'].map((roommateName, index) => {
                       const roommateRequests = requestsByRoommate[roommateName] || [];
                       
-                      // Skip if no requests for this roommate in this month
-                      if (roommateRequests.length === 0) return null;
-                      
                       // Fixed colors: Ushi Lo = pink, Eileen = blue
                       const colorScheme = index === 0 ? 'secondary' : 'primary'; // secondary = pink, primary = blue
                       
@@ -706,6 +703,7 @@ export default function PaymentRequests() {
                             borderColor: `${colorScheme}.light`, 
                             borderRadius: 2, 
                             backgroundColor: `${colorScheme}.50`,
+                            minHeight: '200px', // Ensure minimum height even when empty
                             '&:hover': {
                               borderColor: `${colorScheme}.main`,
                               backgroundColor: `${colorScheme}.100`
@@ -722,30 +720,42 @@ export default function PaymentRequests() {
                             }}>
                               {roommateName}
                             </Typography>
-                          <Grid container spacing={2}>
-                            {roommateRequests.map((request) => (
-                              <Grid item xs={12} key={request.id}>
-                                <Card variant="outlined" sx={{ 
-                                  border: '2px solid', 
-                                  borderColor: `${colorScheme}.light`,
-                                  '&:hover': {
-                                    borderColor: `${colorScheme}.main`,
-                                    boxShadow: 2
-                                  }
-                                }}>
-                                  <CardContent>
-                                    <Box display="flex" justifyContent="space-between" alignItems="start" mb={1}>
-                                      <Box>
-                                        <Typography variant="body1" color="textSecondary">
-                                          {getBillTypeChip(request.bill_type)}
-                                        </Typography>
-                                        <Typography variant="h5" sx={{ mt: 1 }}>
-                                          {formatCurrency(request.amount)}
-                                        </Typography>
-                                        <Typography variant="caption" color="textSecondary">
-                                          of {formatCurrency(request.bill_total_amount || 0)} total
-                                        </Typography>
-                                      </Box>
+                            {roommateRequests.length === 0 ? (
+                              // Show placeholder when no requests
+                              <Box sx={{ 
+                                textAlign: 'center', 
+                                py: 4,
+                                color: 'text.secondary'
+                              }}>
+                                <Typography variant="body2" color="textSecondary">
+                                  No payment requests this month
+                                </Typography>
+                              </Box>
+                            ) : (
+                              <Grid container spacing={2}>
+                                {roommateRequests.map((request) => (
+                                  <Grid item xs={12} key={request.id}>
+                                    <Card variant="outlined" sx={{ 
+                                      border: '2px solid', 
+                                      borderColor: `${colorScheme}.light`,
+                                      '&:hover': {
+                                        borderColor: `${colorScheme}.main`,
+                                        boxShadow: 2
+                                      }
+                                    }}>
+                                      <CardContent>
+                                        <Box display="flex" justifyContent="space-between" alignItems="start" mb={1}>
+                                          <Box>
+                                            <Typography variant="body1" color="textSecondary">
+                                              {getBillTypeChip(request.bill_type)}
+                                            </Typography>
+                                            <Typography variant="h5" sx={{ mt: 1 }}>
+                                              {formatCurrency(request.amount)}
+                                            </Typography>
+                                            <Typography variant="caption" color="textSecondary">
+                                              of {formatCurrency(request.bill_total_amount || 0)} total
+                                            </Typography>
+                                          </Box>
                               <Box display="flex" gap={0.5} alignItems="center">
                                 {/* Show email match indicator */}
                                 {emailsByRequest[request.id] && emailsByRequest[request.id].length > 0 && (
@@ -881,11 +891,12 @@ export default function PaymentRequests() {
                                 Open in Venmo
                               </Button>
                             </Box>
-                                  </CardContent>
-                                </Card>
+                                      </CardContent>
+                                    </Card>
+                                  </Grid>
+                                ))}
                               </Grid>
-                            ))}
-                          </Grid>
+                            )}
                           </Box>
                         </Grid>
                       );

@@ -128,23 +128,11 @@ class VenmoMatchingService {
         if (trackingMatch) {
           console.log(`✅ Found exact match via tracking ID: Payment Request #${trackingMatch.id}`);
           
-          // Update payment request as paid
-          await db.query(`
-            UPDATE payment_requests 
-            SET status = 'paid', 
-                paid_date = $1,
-                updated_at = NOW()
-            WHERE id = $2
-          `, [emailRecord.received_date, trackingMatch.id]);
-          
-          // Update email with match
-          await db.query(`
-            UPDATE venmo_emails 
-            SET payment_request_id = $1, 
-                matched = true,
-                confidence_score = 1.0
-            WHERE id = $2
-          `, [trackingMatch.id, emailRecord.id]);
+          // Use applyMatch to handle all the updates including income creation
+          await this.applyMatch(emailRecord, {
+            ...trackingMatch,
+            confidence: 1.0
+          });
           
           return { 
             matched: true, 
@@ -234,11 +222,18 @@ class VenmoMatchingService {
           confidence: bestMatch.confidence 
         };
       } else {
-        // Store for manual review
+        // Store for manual review - using actual database schema
         await db.insert('venmo_unmatched_emails', {
-          venmo_email_id: emailRecord.id,
-          potential_matches: JSON.stringify(matchScores.slice(0, 3)), // Top 3 matches
-          resolution_status: 'pending'
+          email_id: emailRecord.gmail_message_id, // Use gmail_message_id as email_id
+          from_address: emailRecord.sender_email,
+          subject: emailRecord.subject,
+          body_snippet: emailRecord.body_snippet,
+          received_date: emailRecord.received_date,
+          sender_name: emailRecord.venmo_actor,
+          amount: emailRecord.venmo_amount,
+          transaction_type: emailRecord.email_type,
+          created_at: new Date(),
+          updated_at: new Date()
         });
         
         console.log('⚠️  Confidence too low for auto-match, flagged for manual review');
@@ -443,13 +438,11 @@ class VenmoMatchingService {
       confidence: 1.0 // Manual match has 100% confidence
     });
     
-    // Update unmatched record
+    // Update unmatched record - using actual database schema
+    // Note: venmo_unmatched_emails doesn't have resolution columns, so we'll just delete the record
     await db.query(`
-      UPDATE venmo_unmatched_emails 
-      SET resolution_status = 'matched',
-          resolved_at = CURRENT_TIMESTAMP,
-          resolved_by = 'manual'
-      WHERE venmo_email_id = $1
+      DELETE FROM venmo_unmatched_emails 
+      WHERE email_id = (SELECT gmail_message_id FROM venmo_emails WHERE id = $1)
     `, [emailId]);
     
     return { success: true };

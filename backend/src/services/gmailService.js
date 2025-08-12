@@ -202,6 +202,8 @@ class GmailService {
    * Parse Venmo email content
    */
   parseVenmoEmail(email) {
+    const { extractTrackingId } = require('../utils/trackingId');
+    
     const parsed = {
       gmail_message_id: email.id,
       gmail_thread_id: email.threadId,
@@ -274,8 +276,20 @@ class GmailService {
       parsed.email_type = 'request_cancelled';
     }
     
-    // Extract tracking ID from subject, body, or note
+    // Extract note from email body/snippet for payment received emails
+    if (parsed.email_type === 'payment_received' && email.snippet) {
+      // Look for the tracking ID pattern in the snippet
+      // The snippet contains the note like "2025-July-Water - Water bill for Jul 2025..."
+      const notePattern = /(\d{4}-\w+-\w+[^.]*)/;
+      const noteMatch = email.snippet.match(notePattern);
+      if (noteMatch) {
+        parsed.venmo_note = noteMatch[1].trim();
+      }
+    }
+    
+    // Extract tracking ID from subject, body, snippet or note
     const trackingId = extractTrackingId(email.subject) || 
+                      extractTrackingId(email.snippet) ||
                       extractTrackingId(email.body) || 
                       extractTrackingId(parsed.venmo_note);
     
