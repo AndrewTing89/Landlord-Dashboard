@@ -1,0 +1,46 @@
+# Cloudflare Tunnel Configuration
+# This file configures the cloudflared tunnel to route traffic from your domains
+# to local services on this server
+
+# Tunnel credentials (you'll need to update the tunnel ID)
+tunnel: YOUR_TUNNEL_ID_HERE
+credentials-file: /home/beehiveting/.cloudflared/YOUR_TUNNEL_ID.json
+
+# Ingress rules - Routes traffic based on hostname
+ingress:
+  # Portfolio Optimization App
+  - hostname: portfolio.onlyapps-studio.com
+    service: http://localhost:8501
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+      
+  # Landlord Dashboard - Main App
+  - hostname: landlord-dashboard.onlyapps-studio.com
+    service: http://localhost:3001
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+      
+  # Landlord Dashboard - API (if you want direct API access)
+  - hostname: api.landlord-dashboard.onlyapps-studio.com
+    service: http://localhost:3002
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+      
+  # Tenant Portal (optional - on subdomain)
+  - hostname: tenant.landlord-dashboard.onlyapps-studio.com
+    service: http://localhost:3003
+    originRequest:
+      noTLSVerify: true
+      connectTimeout: 30s
+      
+  # Health check endpoint
+  - hostname: health.onlyapps-studio.com
+    service: http://localhost:3002/api/health
+    originRequest:
+      noTLSVerify: true
+      
+  # Catch-all rule (required)
+  - service: http_status:404

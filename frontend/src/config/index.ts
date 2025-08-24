@@ -4,7 +4,7 @@ const isDevelopment = import.meta.env.DEV;
 const config = {
   // API Configuration
   api: {
-    baseURL: import.meta.env.VITE_API_URL || (isDevelopment ? '' : 'https://api.yourdomain.com'),
+    baseURL: import.meta.env.VITE_API_URL || '',
     endpoints: {
       // Plaid
       createLinkToken: '/api/plaid/create-link-token',

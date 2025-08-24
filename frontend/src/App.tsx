@@ -10,7 +10,6 @@ import Settings from './pages/Settings';
 import MaintenanceTickets from './pages/MaintenanceTickets';
 import Review from './pages/Review';
 import SyncManagement from './pages/SyncManagement';
-import PaymentTrackingSimpleCards from './pages/PaymentTrackingSimpleCards';
 import EmailSyncManagement from './pages/EmailSyncManagement';
 import HealthCheck from './pages/HealthCheck';
 
@@ -24,7 +23,6 @@ function App() {
           <Route path="ledger" element={<Ledger />} />
           <Route path="transactions" element={<Transactions />} />
           <Route path="review" element={<Review />} />
-          <Route path="payment-tracking" element={<PaymentTrackingSimpleCards />} />
           <Route path="payments" element={<PaymentRequests />} />
           <Route path="maintenance" element={<MaintenanceTickets />} />
           <Route path="reports" element={<Reports />} />

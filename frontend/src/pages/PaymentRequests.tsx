@@ -826,7 +826,7 @@ export default function PaymentRequests() {
                                 )}
                               </Box>
                               <Typography variant="body2" color="textSecondary">
-                                Bill Date: <strong>{request.charge_date ? format(new Date(request.charge_date), 'MMM dd, yyyy') : 'N/A'}</strong>
+                                Bill Paid: <strong>{request.charge_date ? format(new Date(request.charge_date), 'MMM dd, yyyy') : 'N/A'}</strong>
                               </Typography>
                               {request.status === 'paid' && request.paid_date && (
                                 <Typography variant="caption" color="success.main" sx={{ mt: 0.5, display: 'block' }}>

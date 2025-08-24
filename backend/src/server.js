@@ -26,7 +26,7 @@ const ValidationMiddleware = require('./middleware/validation');
 
 // Validate environment on startup
 function validateEnv() {
-  const required = ['DATABASE_URL', 'SIMPLEFIN_TOKEN'];
+  const required = ['DATABASE_URL']; // SIMPLEFIN_TOKEN is optional
   const missing = required.filter(key => !process.env[key]);
   
   if (missing.length > 0) {
@@ -1069,26 +1069,18 @@ app.get('/api/simplefin/test', async (req, res) => {
   }
 });
 
-// Bank of America scraper endpoint
-app.post('/api/bofa/scrape', async (req, res) => {
+// Bank of America sync endpoint (via SimpleFIN)
+app.post('/api/bofa/sync', async (req, res) => {
   try {
-    console.log('Scraping Bank of America...');
-    await bofaScraper.initialize();
-    
-    const transactions = await bofaScraper.scrapeTransactions(
-      process.env.BOFA_USERNAME,
-      process.env.BOFA_PASSWORD
-    );
-    
-    const savedCount = await bofaScraper.saveTransactions(transactions);
-    
+    console.log('Bank sync is handled via SimpleFIN API');
+    // SimpleFIN handles all bank transaction syncing
     res.json({
       success: true,
-      transactionsFound: transactions.length,
-      transactionsSaved: savedCount
+      message: 'Please use /api/simplefin/sync endpoint for bank transaction sync',
+      endpoint: '/api/simplefin/sync'
     });
   } catch (error) {
-    console.error('BofA scraping error:', error);
+    console.error('Sync error:', error);
     res.status(500).json({ error: error.message });
   }
 });

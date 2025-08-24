@@ -8,10 +8,9 @@ services:
       POSTGRES_USER: landlord_user
       POSTGRES_PASSWORD: landlord_pass
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./backend/db/init:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U landlord_user -d landlord_dashboard"]
       interval: 10s
@@ -20,20 +19,10 @@ services:
     networks:
       - landlord-network
 
-  localstack:
-    image: localstack/localstack:latest
-    environment:
-      - SERVICES=s3,secretsmanager
-      - DEBUG=1
-      - DATA_DIR=/tmp/localstack/data
-    ports:
-      - "4566:4566"
-    volumes:
-      - localstack_data:/tmp/localstack
-      - /var/run/docker.sock:/var/run/docker.sock
-
   backend:
-    build: ./backend
+    image: node:18-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm start"
     ports:
       - "3002:3002"
     environment:
@@ -47,18 +36,23 @@ services:
         condition: service_healthy
     volumes:
       - ./backend:/app
-      - /app/node_modules
+      - backend_modules:/app/node_modules
     networks:
       - landlord-network
 
   frontend:
-    build: ./frontend
+    image: node:18-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host"
     ports:
-      - "3000:80"
-    depends_on:
-      - backend
+      - "3000:3000"
     environment:
       - VITE_API_URL=http://localhost:3002
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - frontend_modules:/app/node_modules
     networks:
       - landlord-network
 
@@ -68,4 +62,5 @@ networks:
 
 volumes:
   postgres_data:
-  localstack_data:
+  backend_modules:
+  frontend_modules:

@@ -99,15 +99,16 @@ router.post('/approve/:id', async (req, res) => {
       } else {
         // Expense (negative amounts) - insert into expenses table
         await db.insert('expenses', {
-          simplefin_transaction_id: rawTx.simplefin_id ? `simplefin_${rawTx.simplefin_id}` : null,
-          simplefin_account_id: rawTx.simplefin_account_id,
+          plaid_transaction_id: rawTx.simplefin_id ? `simplefin_${rawTx.simplefin_id}` : null,
+          plaid_account_id: rawTx.simplefin_account_id || 'unknown',
           amount: Math.abs(rawTx.amount),
           date: rawTx.posted_date,
           name: rawTx.description,
           merchant_name: merchant_name || rawTx.suggested_merchant || rawTx.payee,
           expense_type: expense_type,
           category: rawTx.category || 'Manual Review',
-          subcategory: null
+          subcategory: null,
+          tax_year: new Date(rawTx.posted_date).getFullYear()
         });
         
         // Mark as processed
@@ -232,15 +233,16 @@ router.post('/bulk-approve', async (req, res) => {
               } else {
                 // Insert expense into expenses table
                 const newExpense = await db.insert('expenses', {
-                  simplefin_transaction_id: rawTx.simplefin_id ? `simplefin_${rawTx.simplefin_id}` : null,
-                  simplefin_account_id: rawTx.simplefin_account_id,
+                  plaid_transaction_id: rawTx.simplefin_id ? `simplefin_${rawTx.simplefin_id}` : null,
+                  plaid_account_id: rawTx.simplefin_account_id || 'unknown',
                   amount: Math.abs(rawTx.amount),
                   date: rawTx.posted_date,
                   name: rawTx.description,
                   merchant_name: rawTx.suggested_merchant || rawTx.payee,
                   expense_type: finalExpenseType || rawTx.suggested_expense_type || 'other',
                   category: rawTx.category || 'Bulk Approved',
-                  subcategory: null
+                  subcategory: null,
+                  tax_year: new Date(rawTx.posted_date).getFullYear()
                 });
                 
                 // Mark as processed

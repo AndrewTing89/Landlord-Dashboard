@@ -287,11 +287,35 @@ class GmailService {
       }
     }
     
-    // Extract tracking ID from subject, body, snippet or note
+    // Enhanced parsing for structured Venmo messages
+    // Look for structured format in note/snippet/body: "Rent\nMonth:August2025\nAmount:$1685.00\nID:2025-August-Rent"
+    const allText = `${email.subject} ${email.snippet} ${email.body} ${parsed.venmo_note || ''}`;
+    
+    // Extract structured month information - multiple formats
+    let monthMatch = allText.match(/Month:\s*(\w+)\s*(\d{4})/i); // Format: "Month:August2025"
+    if (!monthMatch) {
+      // Also look for simple "MonthName YYYY" format
+      monthMatch = allText.match(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})\b/i);
+    }
+    
+    if (monthMatch) {
+      parsed.structured_month = monthMatch[1]; // e.g., "August" or "July"
+      parsed.structured_year = parseInt(monthMatch[2]); // e.g., 2025
+      console.log(`📅 Extracted structured date: ${parsed.structured_month} ${parsed.structured_year}`);
+    }
+    
+    // Extract structured tracking ID
+    const idMatch = allText.match(/ID:\s*([^\s\n]+)/i);
+    if (idMatch) {
+      parsed.structured_tracking_id = idMatch[1]; // e.g., "2025-August-Rent"
+    }
+    
+    // Extract tracking ID from subject, body, snippet or note (existing logic)
     const trackingId = extractTrackingId(email.subject) || 
                       extractTrackingId(email.snippet) ||
                       extractTrackingId(email.body) || 
-                      extractTrackingId(parsed.venmo_note);
+                      extractTrackingId(parsed.venmo_note) ||
+                      parsed.structured_tracking_id; // Also use structured ID
     
     if (trackingId) {
       parsed.tracking_id = trackingId;

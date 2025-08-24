@@ -97,25 +97,24 @@ router.post('/requests/:id/mark-paid', async (req, res) => {
         date: incomeMonth, // For backwards compatibility
         description: `${paymentRequest.roommate_name} - ${utilityName} Payment`,
         income_type: incomeType,
-        source: 'payment_request',
+        source_type: 'payment_request', // Changed from 'source' to 'source_type'
         payment_request_id: paymentRequest.id,
         payer_name: paymentRequest.roommate_name,
         income_month: incomeMonth,
         received_date: new Date(), // When we marked it as paid
-        recorded_date: new Date(), // When we created this record
-        basis_type: 'accrual', // Default to accrual basis
+        month: paymentRequest.month,
+        year: paymentRequest.year,
         notes: `Payment request #${paymentRequest.id} marked paid via dashboard`
       });
       
       // Create payment confirmation record
       await db.insert('payment_confirmations', {
         payment_request_id: paymentRequest.id,
-        confirmation_type: 'manual',
-        confirmed_amount: parseFloat(paymentRequest.amount),
-        confirmation_date: new Date(),
-        confirmed_by: 'dashboard_user', // Could be enhanced with actual user info
-        confirmation_notes: 'Payment manually marked as paid via dashboard',
-        confidence_score: 1.0 // Manual confirmation = 100% confident
+        payer_name: paymentRequest.roommate_name,
+        amount: parseFloat(paymentRequest.amount),
+        email_subject: `Manual confirmation - ${paymentRequest.bill_type} payment`,
+        email_date: new Date(),
+        processed_at: new Date()
       });
       
       await db.query('COMMIT');

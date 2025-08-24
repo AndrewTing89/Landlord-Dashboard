@@ -48,7 +48,9 @@ class PaymentRequestService {
       // Create payment request for each roommate (excluding landlord)
       for (let i = 0; i < roommates.length; i++) {
         const roommate = roommates[i];
-        const trackingId = `${year}-${monthName}-${typeCapitalized}`;
+        // Standardized tracking ID format: YYYY-MM-Type
+        const monthPadded = month.toString().padStart(2, '0');
+        const trackingId = `${year}-${monthPadded}-${typeCapitalized}`;
         
         let paymentRequest;
         try {
@@ -70,14 +72,16 @@ class PaymentRequestService {
             updated_at: new Date()
           });
           
-          // Generate proper Venmo request link (not payment link)
+          // Generate proper Venmo request link with total amount
           const venmoLink = this.generateVenmoRequestLink(
             roommate.venmoUsername,
             splitAmount,
             expense_type,
             monthName,
             year,
-            trackingId
+            trackingId,
+            amount, // Pass the total amount for proper note formatting
+            date // Pass the charge date for inclusion in note
           );
           
           await db.query(
@@ -114,7 +118,9 @@ class PaymentRequestService {
       const year = now.getFullYear();
       const month = now.getMonth() + 1;
       const monthName = now.toLocaleString('default', { month: 'long' });
-      const trackingId = `${year}-${monthName}-Rent`;
+      // Standardized tracking ID format: YYYY-MM-Type
+      const monthPadded = month.toString().padStart(2, '0');
+      const trackingId = `${year}-${monthPadded}-Rent`;
       
       // Check if rent request already exists for this month
       const existing = await db.query(
@@ -153,24 +159,43 @@ class PaymentRequestService {
     }
   }
 
-  generateVenmoRequestLink(venmoUsername, amount, type, monthName, year, trackingId) {
-    // Format the note similar to rent requests
+  generateVenmoRequestLink(venmoUsername, amount, type, monthName, year, trackingId, totalAmount = null, chargeDate = null) {
+    // Format the note with the standardized format
     const typeCapitalized = type.charAt(0).toUpperCase() + type.slice(1);
-    const note = `${typeCapitalized}\nMonth:${monthName}${year}\nAmount:$${amount}\nID:${trackingId}`;
+    
+    let note;
+    if (type === 'rent') {
+      // For rent, simpler format
+      note = `${trackingId} - Rent for ${year}-${trackingId.split('-')[1]}`;
+    } else {
+      // For utilities: tracking_id - Type bill for YYYY-MM: Total $X, your share is $Y (1/3). I've already paid the full amount.
+      const total = totalAmount || (amount * 3).toFixed(2); // If no total provided, estimate it
+      
+      // Add the actual payment date if available
+      let paymentDateStr = '';
+      if (chargeDate) {
+        const billDate = new Date(chargeDate);
+        paymentDateStr = ` on ${billDate.getMonth() + 1}/${billDate.getDate()}/${billDate.getFullYear()}`;
+      }
+      
+      note = `${trackingId} - ${typeCapitalized} bill for ${year}-${trackingId.split('-')[1]}: Total $${total}, your share is $${amount} (1/3). I paid the full amount${paymentDateStr}.`;
+    }
+    
     const encodedNote = encodeURIComponent(note);
     
-    // Remove @ symbol if present in username
-    const cleanUsername = venmoUsername.replace('@', '');
+    // Remove @ symbol and spaces if present in username
+    const cleanUsername = venmoUsername.replace('@', '').replace(/\s+/g, '');
     
-    // Use https://venmo.com format with txn=charge for requesting money
-    return `https://venmo.com/${cleanUsername}?txn=charge&amount=${amount}&note=${encodedNote}`;
+    // Use the correct Venmo payment link format
+    return `https://account.venmo.com/pay?amount=${amount}&note=${encodedNote}&recipients=${cleanUsername}&txn=charge`;
   }
   
-  // Keep old method for backward compatibility
-  generateVenmoLink(amount, type, month) {
+  // Updated method to use correct Venmo URL format
+  generateVenmoLink(amount, type, month, username = 'Andrew-Ting-29') {
     const description = `${type} reimbursement for ${month}`;
     const encodedDescription = encodeURIComponent(description);
-    return `venmo://paycharge?txn=pay&recipients=Andrew-Ting-29&amount=${amount}&note=${encodedDescription}`;
+    // Use the correct Venmo web link format that works on both mobile and desktop
+    return `https://account.venmo.com/payment-link?amount=${amount}&note=${encodedDescription}&recipients=${username}&txn=pay`;
   }
 }
 

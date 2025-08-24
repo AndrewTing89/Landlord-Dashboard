@@ -1,0 +1,150 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database - Separate instance for landlord-dashboard
+  postgres-landlord:
+    image: postgres:15-alpine
+    container_name: landlord-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-landlord_dashboard}
+      POSTGRES_USER: ${DB_USER:-landlord_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secure_landlord_pass_2024}
+    ports:
+      - "5433:5432"  # Different external port to avoid conflict
+    volumes:
+      - landlord-postgres-data:/var/lib/postgresql/data
+      - ./backend/src/db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-landlord_user} -d ${DB_NAME:-landlord_dashboard}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    networks:
+      - landlord-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Backend API Service
+  backend:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: landlord-backend
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    env_file:
+      - .env.production
+      
+    depends_on:
+      postgres-landlord:
+        condition: service_healthy
+    volumes:
+      - ./backend/src:/app/src:ro
+      - ./backend/scripts:/app/scripts:ro
+      - backend-uploads:/app/uploads
+    networks:
+      - landlord-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-https://landlord-dashboard.onlyapps-studio.com/api}
+    container_name: landlord-frontend
+    restart: unless-stopped
+    ports:
+      - "3001:80"  # Changed from 3000 to avoid conflicts
+    environment:
+      - VITE_API_URL=${VITE_API_URL:-https://landlord-dashboard.onlyapps-studio.com/api}
+    depends_on:
+      - backend
+    networks:
+      - landlord-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Tenant Portal (if you have it)
+  tenant-portal:
+    build:
+      context: ./tenant-frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-https://landlord-dashboard.onlyapps-studio.com/api}
+    container_name: landlord-tenant-portal
+    restart: unless-stopped
+    ports:
+      - "3003:80"
+    environment:
+      - VITE_API_URL=${VITE_API_URL:-https://landlord-dashboard.onlyapps-studio.com/api}
+    depends_on:
+      - backend
+    networks:
+      - landlord-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: LocalStack for S3 mock (comment out if using real AWS S3)
+  # localstack:
+  #   image: localstack/localstack:latest
+  #   container_name: landlord-localstack
+  #   restart: unless-stopped
+  #   environment:
+  #     - SERVICES=s3
+  #     - DEBUG=0
+  #     - DATA_DIR=/tmp/localstack/data
+  #   ports:
+  #     - "4566:4566"
+  #   volumes:
+  #     - localstack-data:/tmp/localstack
+  #   networks:
+  #     - landlord-network
+
+networks:
+  landlord-network:
+    driver: bridge
+    name: landlord-network
+
+volumes:
+  landlord-postgres-data:
+    name: landlord-postgres-data
+  backend-uploads:
+    name: landlord-backend-uploads
+  # localstack-data:
+  #   name: landlord-localstack-data

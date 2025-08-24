@@ -136,6 +136,19 @@ export const apiService = {
   
   listBackups: () =>
     api.get('/api/backup/list'),
+
+  // Gmail/Email monitoring for Venmo payments
+  checkGmailForVenmo: () =>
+    api.post('/api/gmail/check-venmo'),
+  
+  getVenmoEmailTracking: () =>
+    api.get('/api/gmail/venmo-emails'),
+
+  // Generic methods for any endpoint not explicitly defined
+  get: (url: string, config?: any) => api.get(url, config),
+  post: (url: string, data?: any, config?: any) => api.post(url, data, config),
+  put: (url: string, data?: any, config?: any) => api.put(url, data, config),
+  delete: (url: string, config?: any) => api.delete(url, config),
 };
 
 export default api;

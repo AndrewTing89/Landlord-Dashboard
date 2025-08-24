@@ -1,0 +1,15 @@
+# Ignore environment files - these should be provided via docker-compose env_file
+.env*
+!.env.example
+
+# Ignore node_modules (will be installed in container)
+node_modules
+
+# Ignore development files
+*.log
+.nyc_output
+coverage
+
+# Ignore OS files
+.DS_Store
+Thumbs.db

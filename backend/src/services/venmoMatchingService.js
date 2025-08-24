@@ -70,7 +70,7 @@ class VenmoMatchingService {
     console.log(`🔍 Attempting to match payment email: $${emailRecord.venmo_amount} from ${emailRecord.venmo_actor}`);
     
     try {
-      // SPECIAL RULE: Rent detection (Ushi payment >= $1600)
+      // ENHANCED RULE: Multi-level rent detection with structured data priority
       const isUshi = emailRecord.venmo_actor && 
         (emailRecord.venmo_actor.toLowerCase().includes('ushi') || 
          emailRecord.venmo_actor.toLowerCase().includes(process.env.ROOMMATE_NAME?.toLowerCase() || 'ushi'));
@@ -78,25 +78,63 @@ class VenmoMatchingService {
       const rentAmount = parseFloat(process.env.MONTHLY_RENT || 1685);
       const rentThreshold = rentAmount - 100; // Allow some variance
       
-      if (isUshi && emailRecord.venmo_amount >= rentThreshold) {
-        console.log(`🏠 Detected potential rent payment: $${emailRecord.venmo_amount} from Ushi`);
+      // Check for rent-related content in the message
+      const isRentPayment = isUshi && (
+        emailRecord.venmo_amount >= rentThreshold ||
+        /rent/i.test(emailRecord.venmo_note || '') ||
+        /rent/i.test(emailRecord.subject || '') ||
+        (emailRecord.structured_tracking_id && /rent/i.test(emailRecord.structured_tracking_id))
+      );
+      
+      if (isRentPayment) {
+        console.log(`🏠 Detected rent payment: $${emailRecord.venmo_amount} from ${emailRecord.venmo_actor}`);
         
-        const emailDate = new Date(emailRecord.received_date);
-        const month = emailDate.getMonth() + 1;
-        const year = emailDate.getFullYear();
+        // Priority 1: Extract structured month/year from email content
+        let targetMonth, targetYear;
+        const allText = `${emailRecord.subject} ${emailRecord.body_snippet} ${emailRecord.venmo_note || ''}`;
         
-        // Look for rent payment request for this month OR previous month (in case paid early/late)
+        // Try to extract month information from email content
+        let monthMatch = allText.match(/Month:\s*(\w+)\s*(\d{4})/i); // Format: "Month:August2025"
+        if (!monthMatch) {
+          // Also look for simple "MonthName YYYY" format
+          monthMatch = allText.match(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})\b/i);
+        }
+        
+        if (monthMatch) {
+          // Convert month name to number
+          const monthNames = ['january', 'february', 'march', 'april', 'may', 'june',
+            'july', 'august', 'september', 'october', 'november', 'december'];
+          targetMonth = monthNames.indexOf(monthMatch[1].toLowerCase()) + 1;
+          targetYear = parseInt(monthMatch[2]);
+          console.log(`📅 Using extracted structured date: ${monthMatch[1]} ${monthMatch[2]} (${targetMonth}/${targetYear})`);
+        } else {
+          // Priority 2: Use email received date as fallback
+          const emailDate = new Date(emailRecord.received_date);
+          targetMonth = emailDate.getMonth() + 1;
+          targetYear = emailDate.getFullYear();
+          console.log(`📅 Using email date fallback: ${targetMonth}/${targetYear}`);
+        }
+        
+        // Look for rent payment request with flexible matching
         const rentRequest = await db.getOne(`
           SELECT pr.*
           FROM payment_requests pr
           WHERE pr.bill_type = 'rent'
             AND pr.status IN ('pending', 'sent')
             AND pr.year = $1
-            AND pr.month IN ($2, $3)
-            AND ABS(pr.amount::numeric - $4) <= 100
-          ORDER BY ABS(pr.month - $2), pr.created_at DESC
+            AND pr.month IN ($2, $3, $4)
+            AND ABS(pr.amount::numeric - $5) <= 100
+          ORDER BY 
+            CASE WHEN pr.month = $2 THEN 1 ELSE 2 END,  -- Prefer exact month match
+            pr.created_at DESC
           LIMIT 1
-        `, [year, month, month === 1 ? 12 : month - 1, emailRecord.venmo_amount]);
+        `, [
+          targetYear, 
+          targetMonth, 
+          targetMonth === 1 ? 12 : targetMonth - 1,  // Previous month 
+          targetMonth === 12 ? 1 : targetMonth + 1,  // Next month
+          emailRecord.venmo_amount
+        ]);
         
         if (rentRequest) {
           console.log(`✅ Matched to rent payment request #${rentRequest.id} for ${rentRequest.month}/${rentRequest.year}`);
@@ -105,25 +143,27 @@ class VenmoMatchingService {
             matched: true, 
             payment_request_id: rentRequest.id,
             confidence: 1.0,
-            match_method: 'rent_rule'
+            match_method: 'enhanced_rent_rule'
           };
         } else {
-          console.log(`⚠️ No rent payment request found for ${month}/${year}`);
+          console.log(`⚠️ No rent payment request found for ${targetMonth}/${targetYear}`);
           console.log(`   Consider creating a rent payment request first`);
           // Don't auto-create transaction - let the user handle this
         }
       }
-      // First, try to match by tracking ID if available
-      if (emailRecord.tracking_id) {
-        console.log(`🏷️  Found tracking ID in email: ${emailRecord.tracking_id}`);
+      // Priority matching by tracking ID (structured ID has higher priority)
+      const primaryTrackingId = emailRecord.structured_tracking_id || emailRecord.tracking_id;
+      
+      if (primaryTrackingId) {
+        console.log(`🏷️  Found tracking ID in email: ${primaryTrackingId} ${emailRecord.structured_tracking_id ? '(structured)' : '(extracted)'}`);
         
         const trackingMatch = await db.getOne(`
           SELECT pr.*, pr.roommate_name as recipient_name, ub.bill_type
           FROM payment_requests pr
           LEFT JOIN utility_bills ub ON pr.utility_bill_id = ub.id
           WHERE pr.tracking_id = $1
-            AND pr.status = 'pending'
-        `, [emailRecord.tracking_id]);
+            AND pr.status IN ('pending', 'sent')
+        `, [primaryTrackingId]);
         
         if (trackingMatch) {
           console.log(`✅ Found exact match via tracking ID: Payment Request #${trackingMatch.id}`);
@@ -167,7 +207,7 @@ class VenmoMatchingService {
       
       console.log(`📋 Found ${potentialMatches.length} potential matches`);
       
-      // Calculate confidence scores for each match
+      // Calculate confidence scores for each match with enhanced structured data
       const matchScores = potentialMatches.map(request => {
         const scores = {
           request_id: request.id,
@@ -176,14 +216,36 @@ class VenmoMatchingService {
             emailRecord.venmo_actor,
             request.recipient_name || request.roommate_name || process.env.ROOMMATE_NAME || 'Ushi Lo'
           ),
-          note_match: 0
+          note_match: 0,
+          structured_match: 0,
+          time_match: 0
         };
+        
+        // Enhanced structured date matching
+        if (emailRecord.structured_month && emailRecord.structured_year) {
+          // Convert month name to number
+          const monthNames = ['january', 'february', 'march', 'april', 'may', 'june',
+            'july', 'august', 'september', 'october', 'november', 'december'];
+          const emailMonth = monthNames.indexOf(emailRecord.structured_month.toLowerCase()) + 1;
+          
+          if (emailMonth === request.month && emailRecord.structured_year === request.year) {
+            scores.structured_match = 1.0; // Perfect structured date match
+            console.log(`📅 Perfect structured date match: ${emailRecord.structured_month} ${emailRecord.structured_year}`);
+          }
+        } else {
+          // Fallback to time proximity matching
+          const emailDate = new Date(emailRecord.received_date);
+          const requestDate = new Date(request.year, request.month - 1, 15); // 15th of the month
+          const daysDiff = Math.abs((emailDate.getTime() - requestDate.getTime()) / (1000 * 60 * 60 * 24));
+          scores.time_match = Math.max(0, 1 - (daysDiff / 60)); // Decay over 60 days
+        }
         
         // Check if note contains bill type keywords
         if (emailRecord.venmo_note && request.bill_type) {
           const noteKeywords = {
             'electricity': ['pge', 'pg&e', 'electric', 'power'],
-            'water': ['water', 'great oaks']
+            'water': ['water', 'great oaks'],
+            'rent': ['rent', 'monthly']
           };
           
           const keywords = noteKeywords[request.bill_type] || [];
@@ -194,12 +256,24 @@ class VenmoMatchingService {
           scores.note_match = noteMatch ? 1 : 0;
         }
         
-        // Calculate weighted confidence score (no time proximity)
-        scores.confidence = (
-          scores.amount_match * 0.5 +    // Amount is most important
-          scores.name_match * 0.35 +     // Name is second most important
-          scores.note_match * 0.15        // Note keywords are helpful
-        );
+        // Enhanced weighted confidence score with structured data priority
+        if (scores.structured_match > 0) {
+          // Structured match gets highest weight
+          scores.confidence = (
+            scores.amount_match * 0.4 +      // Amount still important
+            scores.name_match * 0.2 +        // Name less important with structured data
+            scores.structured_match * 0.3 +   // Structured date match is very reliable
+            scores.note_match * 0.1          // Note keywords helpful
+          );
+        } else {
+          // Fallback to time-based matching
+          scores.confidence = (
+            scores.amount_match * 0.45 +     // Amount is most important
+            scores.name_match * 0.3 +        // Name is second most important
+            scores.time_match * 0.15 +       // Time proximity matters
+            scores.note_match * 0.1          // Note keywords helpful
+          );
+        }
         
         return {
           ...request,
@@ -316,24 +390,30 @@ class VenmoMatchingService {
             amount,
             description,
             income_type,
+            source_type,
             payment_request_id,
             payer_name,
             notes,
             month,
             year,
+            income_month,
+            income_year,
             created_at,
             updated_at
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())
         `, [
           accrualDate,  // Accrual date (1st of month)
           cashDate,     // Cash date (when actually paid)
           parseFloat(paymentRequest.amount),
           `Rent Payment - ${paymentRequest.roommate_name} - ${this.getMonthName(paymentRequest.month)} ${paymentRequest.year}`,
           'rent',
+          'payment_request', // Source type - this income comes from a payment request
           paymentRequest.id,
           paymentRequest.roommate_name,
           `Rent accrued ${new Date(accrualDate).toISOString().split('T')[0]}, paid ${new Date(cashDate).toISOString().split('T')[0]} via Venmo`,
           paymentRequest.month,
+          paymentRequest.year,
+          accrualDate, // Income month (for accrual accounting)
           paymentRequest.year
         ]);
         console.log(`✅ Created rent income record for ${paymentRequest.roommate_name}`);
@@ -374,26 +454,34 @@ class VenmoMatchingService {
         amount,
         description,
         income_type,
+        source_type,
         payment_request_id,
         payer_name,
         notes,
         month,
         year,
+        income_month,
+        income_year,
+        received_date,
         created_at,
         updated_at
       ) VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW()
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW()
       ) RETURNING id
     `, [
       emailRecord.received_date,
       emailRecord.venmo_amount, // Positive for income
       `Utility Reimbursement - ${paymentRequest.bill_type} - ${this.getMonthName(paymentRequest.month)} ${paymentRequest.year}`,
       'utility_reimbursement',
+      'payment_request', // Source type - this income comes from a payment request
       paymentRequest.id,
       emailRecord.venmo_actor,
       `Auto-matched from Venmo email: ${emailRecord.venmo_note || 'No note'}`,
       paymentRequest.month,
-      paymentRequest.year
+      paymentRequest.year,
+      new Date(paymentRequest.year, paymentRequest.month - 1, 1), // Income month for accrual
+      paymentRequest.year,
+      emailRecord.received_date // When payment was actually received
     ]);
     
     console.log(`💰 Created utility reimbursement income record for $${emailRecord.venmo_amount}`);
@@ -438,12 +526,17 @@ class VenmoMatchingService {
       confidence: 1.0 // Manual match has 100% confidence
     });
     
-    // Update unmatched record - using actual database schema
-    // Note: venmo_unmatched_emails doesn't have resolution columns, so we'll just delete the record
-    await db.query(`
-      DELETE FROM venmo_unmatched_emails 
-      WHERE email_id = (SELECT gmail_message_id FROM venmo_emails WHERE id = $1)
-    `, [emailId]);
+    // Clean up any unmatched record if it exists
+    // The venmo_unmatched_emails table uses venmo_email_id as the foreign key
+    try {
+      await db.query(`
+        DELETE FROM venmo_unmatched_emails 
+        WHERE venmo_email_id = $1
+      `, [emailId]);
+    } catch (err) {
+      // It's okay if there's no unmatched record to delete
+      console.log('No unmatched record to delete or error deleting:', err.message);
+    }
     
     return { success: true };
   }

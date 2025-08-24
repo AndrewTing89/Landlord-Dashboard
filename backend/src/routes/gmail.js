@@ -107,8 +107,7 @@ router.post('/ignore/:id', asyncHandler(async (req, res) => {
     UPDATE venmo_emails 
     SET 
       ignored = true,
-      manual_review_needed = false,
-      updated_at = NOW()
+      manual_review_needed = false
     WHERE id = $1
     RETURNING *
   `, [id]);
@@ -202,16 +201,17 @@ router.post('/refund/:id', asyncHandler(async (req, res) => {
       date,
       amount,
       income_type,
+      source_type,
       description,
-      created_at,
-      updated_at
+      created_at
     ) VALUES (
-      $1, $2, $3, $4, NOW(), NOW()
+      $1, $2, $3, $4, $5, NOW()
     ) RETURNING *
   `, [
     email.received_date,
     email.venmo_amount,
-    'refund',
+    'other',  // Use 'other' since 'refund' is not in the check constraint
+    'manual',
     `Refund from ${email.venmo_actor}: ${email.venmo_note || 'No note'}`,
   ]);
   
@@ -220,8 +220,7 @@ router.post('/refund/:id', asyncHandler(async (req, res) => {
     UPDATE venmo_emails 
     SET 
       matched = true,
-      manual_review_needed = false,
-      updated_at = NOW()
+      manual_review_needed = false
     WHERE id = $1
   `, [id]);
   
@@ -243,8 +242,7 @@ router.post('/flag/:id', asyncHandler(async (req, res) => {
     UPDATE venmo_emails 
     SET 
       manual_review_needed = true,
-      review_reason = $2,
-      updated_at = NOW()
+      review_reason = $2
     WHERE id = $1
     RETURNING *
   `, [id, reason || 'Flagged for manual review']);
