@@ -6,7 +6,7 @@ async function processPendingTransactions() {
     
     // Process Venmo rent payments
     const rentResult = await db.query(
-      `INSERT INTO transactions (plaid_transaction_id, plaid_account_id, amount, date, name, merchant_name, expense_type, category, subcategory)
+      `INSERT INTO expenses (simplefin_transaction_id, simplefin_account_id, amount, date, name, merchant_name, expense_type, category, subcategory)
        SELECT 
          'simplefin_' || simplefin_id,
          simplefin_account_id,
@@ -22,8 +22,8 @@ async function processPendingTransactions() {
          AND confidence_score >= 0.9
          AND processed = false
          AND NOT EXISTS (
-           SELECT 1 FROM transactions t 
-           WHERE t.plaid_transaction_id = 'simplefin_' || raw_transactions.simplefin_id
+           SELECT 1 FROM expenses t 
+           WHERE t.simplefin_transaction_id = 'simplefin_' || raw_transactions.simplefin_id
          )`
     );
     
@@ -31,7 +31,7 @@ async function processPendingTransactions() {
     
     // Process landscape maintenance (Carlos)
     const maintenanceResult = await db.query(
-      `INSERT INTO transactions (plaid_transaction_id, plaid_account_id, amount, date, name, merchant_name, expense_type, category, subcategory)
+      `INSERT INTO expenses (simplefin_transaction_id, simplefin_account_id, amount, date, name, merchant_name, expense_type, category, subcategory)
        SELECT 
          'simplefin_' || simplefin_id,
          simplefin_account_id,
@@ -47,8 +47,8 @@ async function processPendingTransactions() {
          AND confidence_score >= 0.9
          AND processed = false
          AND NOT EXISTS (
-           SELECT 1 FROM transactions t 
-           WHERE t.plaid_transaction_id = 'simplefin_' || raw_transactions.simplefin_id
+           SELECT 1 FROM expenses t 
+           WHERE t.simplefin_transaction_id = 'simplefin_' || raw_transactions.simplefin_id
          )`
     );
     
@@ -69,7 +69,7 @@ async function processPendingTransactions() {
          EXTRACT(MONTH FROM date) as month,
          SUM(CASE WHEN expense_type = 'rent' THEN amount ELSE 0 END) as revenue,
          SUM(CASE WHEN expense_type != 'rent' THEN amount ELSE 0 END) as expenses
-       FROM transactions
+       FROM expenses
        WHERE EXTRACT(YEAR FROM date) = 2025
        GROUP BY EXTRACT(MONTH FROM date)
        ORDER BY month`

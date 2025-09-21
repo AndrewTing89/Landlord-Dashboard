@@ -22,15 +22,20 @@ async function catchUpUtilityBills() {
     syncId = await syncTracker.startSync('catch_up', { lookbackDays });
     
     // Find all utility bills without payment requests
+    // Load roommate config to know how many roommates we have
+    const roommateConfig = require('../../config/roommate.config');
+    const expectedRoommateCount = roommateConfig.roommates.length;
+    
     const unbilledTransactions = await db.query(
-      `SELECT t.* FROM transactions t
+      `SELECT t.* FROM expenses t
        WHERE t.expense_type IN ('electricity', 'water')
-       AND NOT EXISTS (
-         SELECT 1 FROM payment_requests pr 
-         WHERE pr.merchant_name = t.merchant_name 
-         AND pr.month = EXTRACT(MONTH FROM t.date)
+       AND (
+         SELECT COUNT(DISTINCT roommate_name) 
+         FROM payment_requests pr 
+         WHERE pr.month = EXTRACT(MONTH FROM t.date)
          AND pr.year = EXTRACT(YEAR FROM t.date)
-       )
+         AND pr.bill_type = t.expense_type
+       ) < ${expectedRoommateCount}  -- Not all roommates have payment requests
        AND t.date >= CURRENT_DATE - INTERVAL '${lookbackDays} days'
        ORDER BY t.date ASC`
     );
@@ -52,6 +57,9 @@ async function catchUpUtilityBills() {
     console.log('\nPress Ctrl+C to cancel, or wait 5 seconds to create payment requests...');
     await new Promise(resolve => setTimeout(resolve, 5000));
     
+    // Use the roommate configuration already loaded above
+    const roommates = roommateConfig.roommates;
+    
     let created = 0;
     
     for (const bill of unbilledTransactions.rows) {
@@ -61,36 +69,61 @@ async function catchUpUtilityBills() {
       const totalAmount = parseFloat(bill.amount);
       const splitAmount = (totalAmount / 3).toFixed(2);
       
-      // Create payment request
-      const paymentRequest = await db.insert('payment_requests', {
-        bill_type: bill.expense_type,
-        merchant_name: bill.merchant_name || bill.name,
-        amount: splitAmount,
-        total_amount: totalAmount.toFixed(2),
-        venmo_username: '@UshiLo',
-        roommate_name: 'UshiLo',
-        status: 'pending',
-        request_date: new Date(),
-        month: new Date(bill.date).getMonth() + 1,
-        year: new Date(bill.date).getFullYear(),
-        charge_date: bill.date,
-        created_at: new Date()
-      });
-      
-      // Generate Venmo link
-      const monthName = new Date(bill.date).toLocaleString('default', { month: 'short' });
-      const note = `${bill.expense_type === 'electricity' ? 'PG&E' : 'Water'} bill for ${monthName} ${new Date(bill.date).getFullYear()}: Total $${totalAmount}, your share is $${splitAmount} (1/3). I've already paid the full amount.`;
-      
-      const venmoLink = venmoLinkService.generateVenmoLink('@UshiLo', parseFloat(splitAmount), note);
-      
-      // Update with Venmo link
-      await db.query(
-        'UPDATE payment_requests SET venmo_link = $1 WHERE id = $2',
-        [venmoLink, paymentRequest.id]
-      );
-      
-      console.log(`   ✅ Created payment request ID ${paymentRequest.id}`);
-      created++;
+      // Create payment request for each roommate
+      for (const roommate of roommates) {
+        // Check if this specific roommate already has a payment request for this bill
+        const billMonth = new Date(bill.date).getMonth() + 1;
+        const billYear = new Date(bill.date).getFullYear();
+        
+        const existingRequest = await db.query(
+          `SELECT id FROM payment_requests 
+           WHERE month = $1 AND year = $2 AND bill_type = $3 AND roommate_name = $4`,
+          [billMonth, billYear, bill.expense_type, roommate.name]
+        );
+        
+        if (existingRequest.rows.length > 0) {
+          console.log(`   ⏭️  ${roommate.name} already has a payment request for this bill, skipping...`);
+          continue;
+        }
+        
+        // Generate tracking ID
+        const monthPadded = billMonth.toString().padStart(2, '0');
+        const typeCapitalized = bill.expense_type.charAt(0).toUpperCase() + bill.expense_type.slice(1);
+        const trackingId = `${billYear}-${monthPadded}-${typeCapitalized}`;
+        
+        const paymentRequest = await db.insert('payment_requests', {
+          bill_type: bill.expense_type,
+          merchant_name: bill.merchant_name || bill.name,
+          amount: splitAmount,
+          total_amount: totalAmount.toFixed(2),
+          venmo_username: roommate.venmoUsername,
+          roommate_name: roommate.name,
+          status: 'pending',
+          request_date: new Date(),
+          month: billMonth,
+          year: billYear,
+          charge_date: bill.date,
+          tracking_id: trackingId,
+          created_at: new Date()
+        });
+        
+        // Generate Venmo link with new format
+        const monthName = new Date(bill.date).toLocaleString('default', { month: 'short' });
+        const billDate = new Date(bill.date);
+        const paymentDateStr = `${billDate.getMonth() + 1}/${billDate.getDate()}/${billDate.getFullYear()}`;
+        const note = `${trackingId} - ${typeCapitalized} bill for ${monthName} ${billYear}: Total $${totalAmount}, your share is $${splitAmount} (1/3). I paid the full amount on ${paymentDateStr}.`;
+        
+        const venmoLink = venmoLinkService.generateVenmoLink(roommate.venmoUsername, parseFloat(splitAmount), note);
+        
+        // Update with Venmo link
+        await db.query(
+          'UPDATE payment_requests SET venmo_link = $1 WHERE id = $2',
+          [venmoLink, paymentRequest.id]
+        );
+        
+        console.log(`   ✅ Created payment request for ${roommate.name}: ID ${paymentRequest.id}`);
+        created++;
+      }
       
       // Optional: Send Discord notification (you might want to skip this for old bills)
       const sendNotification = process.argv[3] === '--notify';

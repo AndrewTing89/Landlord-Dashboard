@@ -17,7 +17,7 @@ async function deleteJunJulData() {
     
     // Delete transactions
     const txResult = await db.query(
-      `DELETE FROM transactions 
+      `DELETE FROM expenses 
        WHERE date >= '2025-06-01' AND date < '2025-08-01'
        RETURNING id`
     );
@@ -39,7 +39,7 @@ async function deleteJunJulData() {
     
     const remainingTx = await db.query(
       `SELECT COUNT(*) as count, MIN(date) as min_date, MAX(date) as max_date
-       FROM transactions 
+       FROM expenses 
        WHERE date >= '2025-01-01'`
     );
     

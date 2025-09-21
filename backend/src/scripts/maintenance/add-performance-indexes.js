@@ -10,13 +10,13 @@ async function addPerformanceIndexes() {
     const indexes = [
       {
         name: 'idx_transactions_date_type',
-        table: 'transactions',
+        table: 'expenses',
         columns: '(date, expense_type)',
         description: 'Speed up date range and expense type queries'
       },
       {
         name: 'idx_transactions_expense_type',
-        table: 'transactions',
+        table: 'expenses',
         columns: '(expense_type)',
         description: 'Speed up expense type filtering'
       },
@@ -91,7 +91,7 @@ async function addPerformanceIndexes() {
     
     // Analyze tables to update statistics
     console.log('🔄 Analyzing tables to update statistics...');
-    const tables = ['transactions', 'raw_transactions', 'payment_requests', 'sync_history', 'utility_bills'];
+    const tables = ['expenses', 'raw_transactions', 'payment_requests', 'sync_history', 'utility_bills'];
     
     for (const table of tables) {
       try {
@@ -116,7 +116,7 @@ async function addPerformanceIndexes() {
         pg_size_pretty(pg_relation_size(indexname::regclass)) as size
        FROM pg_indexes 
        WHERE schemaname = 'public' 
-       AND tablename IN ('transactions', 'raw_transactions', 'payment_requests', 'sync_history', 'utility_bills')
+       AND tablename IN ('expenses', 'raw_transactions', 'payment_requests', 'sync_history', 'utility_bills')
        ORDER BY tablename, indexname`
     );
     

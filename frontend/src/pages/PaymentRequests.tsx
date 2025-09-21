@@ -666,7 +666,7 @@ export default function PaymentRequests() {
                       Monthly Summary
                     </Typography>
                     <Grid container spacing={2}>
-                      {['Ushi Lo', 'Eileen'].map((roommate) => {
+                      {['Ushi', 'Eileen'].map((roommate) => {
                         const roommateReqs = requestsByRoommate[roommate] || [];
                         if (roommateReqs.length === 0) return null;
                         
@@ -688,11 +688,11 @@ export default function PaymentRequests() {
                   </Box>
                   
                   <Grid container spacing={3}>
-                    {/* Consistent roommate order: Ushi Lo (left, pink), Eileen (right, blue) */}
-                    {['Ushi Lo', 'Eileen'].map((roommateName, index) => {
+                    {/* Consistent roommate order: Ushi (left, pink), Eileen (right, blue) */}
+                    {['Ushi', 'Eileen'].map((roommateName, index) => {
                       const roommateRequests = requestsByRoommate[roommateName] || [];
                       
-                      // Fixed colors: Ushi Lo = pink, Eileen = blue
+                      // Fixed colors: Ushi = pink, Eileen = blue
                       const colorScheme = index === 0 ? 'secondary' : 'primary'; // secondary = pink, primary = blue
                       
                       return (

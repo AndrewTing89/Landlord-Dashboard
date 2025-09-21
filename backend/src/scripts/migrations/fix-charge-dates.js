@@ -27,7 +27,7 @@ async function fixChargeDates() {
         // For electricity, look for PG&E transactions
         query = `
           SELECT date, amount 
-          FROM transactions 
+          FROM expenses 
           WHERE (LOWER(name) LIKE '%pgande%' OR LOWER(name) LIKE '%pg&e%' OR LOWER(name) LIKE '%pacific gas%')
           AND date >= $1 AND date <= $2
           AND expense_type = 'electricity'
@@ -42,7 +42,7 @@ async function fixChargeDates() {
         // For water, look for water transactions
         query = `
           SELECT date, amount 
-          FROM transactions 
+          FROM expenses 
           WHERE (LOWER(name) LIKE '%water%' OR LOWER(name) LIKE '%great oaks%')
           AND date >= $1 AND date <= $2
           AND expense_type = 'water'

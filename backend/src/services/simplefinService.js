@@ -187,7 +187,8 @@ class SimpleFINService {
           }
           
           // Save ALL transactions to raw_transactions for review
-          await db.insert('raw_transactions', {
+          // Only mark deposits as processed, NOT auto-approvals (they need to complete insertion first)
+          const rawTx = await db.insert('raw_transactions', {
             simplefin_id: transaction.id,
             simplefin_account_id: accountId,
             amount: transaction.amount, // Keep original sign for reference
@@ -200,26 +201,38 @@ class SimpleFINService {
             confidence_score: suggestions.confidence,
             excluded: suggestions.excluded,
             exclude_reason: suggestions.exclude_reason,
-            processed: suggestions.auto_approve || isDeposit // Mark deposits as processed
+            processed: isDeposit // Only mark deposits as processed initially
           });
 
           // Only auto-approve EXPENSES (negative amounts) to expenses table
           if (suggestions.auto_approve && !suggestions.excluded && transaction.amount < 0) {
             console.log(`[Auto-Approve] ${transaction.description} -> ${suggestions.expense_type}`);
             
-            const expense = await db.insert('expenses', {
-              simplefin_transaction_id: `simplefin_${transaction.id}`,
-              simplefin_account_id: accountId,
-              amount: amount,
-              date: dateString,
-              name: transaction.description,
-              merchant_name: suggestions.merchant || transaction.payee || this.extractMerchant(transaction.description),
-              expense_type: suggestions.expense_type || 'other',
-              category: transaction.category || 'Other',
-              subcategory: null
-            });
-            
-            // Payment requests are now created automatically by database trigger
+            try {
+              const expense = await db.insert('expenses', {
+                simplefin_transaction_id: `simplefin_${transaction.id}`,
+                simplefin_account_id: accountId,
+                amount: amount,
+                date: dateString,
+                name: transaction.description,
+                merchant_name: suggestions.merchant || transaction.payee || this.extractMerchant(transaction.description),
+                expense_type: suggestions.expense_type || 'other',
+                category: transaction.category || 'Other',
+                subcategory: null
+              });
+              
+              // Only mark as processed AFTER successful insertion
+              if (expense && expense.id) {
+                await db.query(
+                  'UPDATE raw_transactions SET processed = true, processed_at = NOW() WHERE id = $1',
+                  [rawTx.id]
+                );
+                console.log(`[Auto-Approve] Successfully processed transaction ${transaction.id}`);
+              }
+            } catch (insertError) {
+              console.error(`[Auto-Approve] Failed to insert expense for ${transaction.id}:`, insertError.message);
+              // Transaction remains unprocessed in raw_transactions for manual review
+            }
           }
 
           savedCount++;

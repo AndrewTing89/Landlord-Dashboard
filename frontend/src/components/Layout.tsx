@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
+import config from '../config';
 import {
   Box,
   Drawer,
@@ -61,7 +62,7 @@ export default function Layout() {
     // Fetch pending count
     const fetchPendingCount = async () => {
       try {
-        const response = await fetch('http://localhost:3002/api/review/pending?limit=1');
+        const response = await fetch(`${config.api.baseURL}/api/review/pending?limit=1`);
         const data = await response.json();
         setPendingCount(data.total);
       } catch (error) {
@@ -72,7 +73,7 @@ export default function Layout() {
     // Fetch unmatched email count
     const fetchUnmatchedCount = async () => {
       try {
-        const response = await fetch('http://localhost:3002/api/gmail/unmatched');
+        const response = await fetch(`${config.api.baseURL}/api/gmail/unmatched`);
         const data = await response.json();
         setUnmatchedEmailCount(data.data?.length || 0);
       } catch (error) {

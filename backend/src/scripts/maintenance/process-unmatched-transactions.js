@@ -10,11 +10,11 @@ async function processUnmatched() {
       SET processed = false
       WHERE processed = true
         AND NOT EXISTS (
-          SELECT 1 FROM transactions t
+          SELECT 1 FROM expenses t
           WHERE t.date = rt.posted_date
             AND ABS(t.amount) = ABS(rt.amount)
-            AND (t.plaid_transaction_id = 'simplefin_' || rt.simplefin_id
-                 OR t.plaid_transaction_id LIKE '%' || SUBSTRING(rt.simplefin_id, 6))
+            AND (t.simplefin_transaction_id = 'simplefin_' || rt.simplefin_id
+                 OR t.simplefin_transaction_id LIKE '%' || SUBSTRING(rt.simplefin_id, 6))
         )
     `);
     

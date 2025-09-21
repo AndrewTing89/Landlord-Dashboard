@@ -38,7 +38,7 @@ router.post('/bank', async (req, res) => {
     for (const transaction of transactions) {
       // Check if transaction already exists
       const exists = await db.getOne(
-        'SELECT id FROM transactions WHERE simplefin_id = $1',
+        'SELECT id FROM expenses WHERE simplefin_id = $1',
         [transaction.id]
       );
       
@@ -48,7 +48,7 @@ router.post('/bank', async (req, res) => {
         
         if (category && category.priority >= 100) {
           // Auto-approve high priority matches
-          await db.insert('transactions', {
+          await db.insert('expenses', {
             simplefin_id: transaction.id,
             date: transaction.transacted_at,
             amount: Math.abs(transaction.amount),
@@ -61,34 +61,36 @@ router.post('/bank', async (req, res) => {
           
           // Check if it's a utility bill
           if (['electricity', 'water'].includes(category.expense_type)) {
-            // Create utility bill record
+            // Create payment requests for roommates
             try {
-              const billResult = await db.insert('utility_bills', {
-                bill_date: transaction.transacted_at,
-                bill_type: category.expense_type,
-                total_amount: Math.abs(transaction.amount),
-                provider: category.expense_type === 'electricity' ? 'PG&E' : 'Water Company',
-                status: 'pending_split'
-              });
+              const roommateConfig = require('../config/roommate.config');
+              const roommates = roommateConfig.roommates;
               
-              // Create payment requests for roommates
               const splitAmount = Math.abs(transaction.amount) / 3;
               const currentDate = new Date(transaction.transacted_at);
+              const monthPadded = (currentDate.getMonth() + 1).toString().padStart(2, '0');
+              const typeCapitalized = category.expense_type.charAt(0).toUpperCase() + category.expense_type.slice(1);
+              const trackingId = `${currentDate.getFullYear()}-${monthPadded}-${typeCapitalized}`;
               
-              await db.insert('payment_requests', {
-                utility_bill_id: billResult.id,
-                roommate_name: 'Ushi Lo',
-                venmo_username: '@UshiLo',
-                amount: splitAmount.toFixed(2),
-                request_date: currentDate,
-                status: 'pending',
-                bill_type: category.expense_type,
-                month: currentDate.getMonth() + 1,
-                year: currentDate.getFullYear(),
-                total_amount: Math.abs(transaction.amount)
-              });
-              
-              billsProcessed++;
+              // Create payment request for each roommate
+              for (const roommate of roommates) {
+                await db.insert('payment_requests', {
+                  roommate_name: roommate.name,
+                  venmo_username: roommate.venmoUsername,
+                  amount: splitAmount.toFixed(2),
+                  request_date: currentDate,
+                  status: 'pending',
+                  bill_type: category.expense_type,
+                  month: currentDate.getMonth() + 1,
+                  year: currentDate.getFullYear(),
+                  total_amount: Math.abs(transaction.amount),
+                  tracking_id: trackingId,
+                  merchant_name: category.expense_type === 'electricity' ? 'PG&E' : 'Water Company',
+                  charge_date: transaction.transacted_at
+                });
+                
+                billsProcessed++;
+              }
             } catch (billError) {
               console.error('Error creating utility bill:', billError);
             }

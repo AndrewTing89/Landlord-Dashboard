@@ -99,8 +99,8 @@ router.post('/approve/:id', async (req, res) => {
       } else {
         // Expense (negative amounts) - insert into expenses table
         await db.insert('expenses', {
-          plaid_transaction_id: rawTx.simplefin_id ? `simplefin_${rawTx.simplefin_id}` : null,
-          plaid_account_id: rawTx.simplefin_account_id || 'unknown',
+          simplefin_transaction_id: rawTx.simplefin_id ? `simplefin_${rawTx.simplefin_id}` : null,
+          simplefin_account_id: rawTx.simplefin_account_id || 'unknown',
           amount: Math.abs(rawTx.amount),
           date: rawTx.posted_date,
           name: rawTx.description,
@@ -255,46 +255,28 @@ router.post('/bulk-approve', async (req, res) => {
                 // Internet (Comcast) is NOT split among roommates
                 if (['electricity', 'water'].includes(finalExpenseType)) {
                   try {
-                    // First create a utility_bill record
                     const billDate = new Date(rawTx.posted_date);
-                    const utilityBill = await db.insert('utility_bills', {
-                      transaction_id: newExpense.id,
+                    
+                    // Create payment requests directly from the expense
+                    const paymentRequestData = {
+                      ...newExpense,
+                      expense_transaction_id: newExpense.id,
                       bill_type: finalExpenseType,
                       total_amount: Math.abs(rawTx.amount),
                       split_amount: (Math.abs(rawTx.amount) / 3).toFixed(2),
                       month: billDate.getMonth() + 1,
-                      year: billDate.getFullYear(),
-                      payment_requested: false
-                    });
+                      year: billDate.getFullYear()
+                    };
                     
-                    // Now create payment requests using the utility_bill
-                    const expenseWithBillId = { ...newExpense, utility_bill_id: utilityBill.id };
-                    await paymentRequestService.createUtilityPaymentRequests(expenseWithBillId);
-                    console.log(`Created utility bill and payment requests for ${finalExpenseType} (Bill ID: ${utilityBill.id})`);
+                    await paymentRequestService.createUtilityPaymentRequests(paymentRequestData);
+                    console.log(`Created payment requests for ${finalExpenseType} expense (ID: ${newExpense.id})`);
                   } catch (err) {
                     console.error(`Error creating payment requests for ${finalExpenseType} bill:`, err);
                     // Don't fail the approval if payment request creation fails
                   }
                 }
                 
-                // For internet bills, still create utility_bills entry but NO payment requests
-                if (finalExpenseType === 'internet') {
-                  try {
-                    const billDate = new Date(rawTx.posted_date);
-                    await db.insert('utility_bills', {
-                      transaction_id: newExpense.id,
-                      bill_type: finalExpenseType,
-                      total_amount: Math.abs(rawTx.amount),
-                      split_amount: Math.abs(rawTx.amount), // No split for internet
-                      month: billDate.getMonth() + 1,
-                      year: billDate.getFullYear(),
-                      payment_requested: false
-                    });
-                    console.log(`Created internet utility bill record (NO payment requests)`);
-                  } catch (err) {
-                    console.error(`Error creating internet utility bill:`, err);
-                  }
-                }
+                // For internet bills, we don't create payment requests since it's not split
               }
             }
             

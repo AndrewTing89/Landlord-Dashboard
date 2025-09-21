@@ -362,30 +362,8 @@ class VenmoEmailMonitorService {
   }
 
   async linkToUtilityBill(requestId, amount, description) {
-    // Try to match with recent utility bills
-    const recentBill = await db.getOne(
-      `SELECT ub.*, pr.amount as split_amount
-       FROM utility_bills ub
-       JOIN payment_requests pr ON pr.utility_bill_id = ub.id
-       WHERE pr.amount = $1
-       AND pr.status = 'pending'
-       AND ub.created_at > NOW() - INTERVAL '7 days'
-       ORDER BY ub.created_at DESC
-       LIMIT 1`,
-      [amount]
-    );
-    
-    if (recentBill) {
-      await db.query(
-        `UPDATE venmo_payment_requests
-         SET utility_bill_id = $1,
-             bill_type = $2
-         WHERE id = $3`,
-        [recentBill.id, recentBill.bill_type, requestId]
-      );
-      
-      console.log(`Linked Venmo request to ${recentBill.bill_type} bill`);
-    }
+    // This function is deprecated - payment requests now link via month/year/bill_type
+    console.log('linkToUtilityBill is deprecated');
   }
 
   async createPaymentTransaction(paymentRequest, paidDate) {
@@ -395,17 +373,16 @@ class VenmoEmailMonitorService {
       return;
     }
     
-    // Find the original utility expense transaction
+    // Find the original utility expense transaction based on payment request details
     const utilityExpense = await db.getOne(
       `SELECT t.id, t.amount 
-       FROM transactions t
-       JOIN utility_bills ub ON ub.id = $1
-       WHERE t.expense_type = ub.bill_type
-       AND t.date >= ub.created_at::date - INTERVAL '5 days'
-       AND t.date <= ub.created_at::date + INTERVAL '5 days'
-       ORDER BY ABS(t.amount - ub.total_amount) ASC
+       FROM expenses t
+       WHERE t.expense_type = $1
+       AND EXTRACT(MONTH FROM t.date) = $2
+       AND EXTRACT(YEAR FROM t.date) = $3
+       ORDER BY t.date DESC
        LIMIT 1`,
-      [paymentRequest.utility_bill_id]
+      [paymentRequest.bill_type, paymentRequest.month, paymentRequest.year]
     );
     
     if (utilityExpense) {

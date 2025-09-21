@@ -11,8 +11,8 @@ async function seedSampleData() {
     const sampleTransactions = [
       // Rent income
       {
-        plaid_transaction_id: 'rent_' + Date.now(),
-        plaid_account_id: 'sample_account',
+        simplefin_transaction_id: 'rent_' + Date.now(),
+        simplefin_account_id: 'sample_account',
         amount: 3500,
         date: currentMonth.clone().subtract(5, 'days').format('YYYY-MM-DD'),
         name: 'Zelle Transfer - Tenant Payment',
@@ -23,8 +23,8 @@ async function seedSampleData() {
       },
       // Utility bills
       {
-        plaid_transaction_id: 'pge_' + Date.now(),
-        plaid_account_id: 'sample_account',
+        simplefin_transaction_id: 'pge_' + Date.now(),
+        simplefin_account_id: 'sample_account',
         amount: 245.67,
         date: currentMonth.clone().subtract(7, 'days').format('YYYY-MM-DD'),
         name: 'PG&E AUTOPAY',
@@ -34,8 +34,8 @@ async function seedSampleData() {
         expense_type: 'electricity'
       },
       {
-        plaid_transaction_id: 'water_' + Date.now(),
-        plaid_account_id: 'sample_account',
+        simplefin_transaction_id: 'water_' + Date.now(),
+        simplefin_account_id: 'sample_account',
         amount: 89.45,
         date: currentMonth.clone().subtract(10, 'days').format('YYYY-MM-DD'),
         name: 'EBMUD Water Service',
@@ -46,8 +46,8 @@ async function seedSampleData() {
       },
       // Maintenance
       {
-        plaid_transaction_id: 'hd_' + Date.now(),
-        plaid_account_id: 'sample_account',
+        simplefin_transaction_id: 'hd_' + Date.now(),
+        simplefin_account_id: 'sample_account',
         amount: 156.32,
         date: currentMonth.clone().subtract(15, 'days').format('YYYY-MM-DD'),
         name: 'HOME DEPOT #1234',
@@ -57,8 +57,8 @@ async function seedSampleData() {
         expense_type: 'maintenance'
       },
       {
-        plaid_transaction_id: 'lowes_' + Date.now(),
-        plaid_account_id: 'sample_account',
+        simplefin_transaction_id: 'lowes_' + Date.now(),
+        simplefin_account_id: 'sample_account',
         amount: 78.99,
         date: currentMonth.clone().subtract(20, 'days').format('YYYY-MM-DD'),
         name: 'LOWES #5678',
@@ -69,8 +69,8 @@ async function seedSampleData() {
       },
       // Other expenses
       {
-        plaid_transaction_id: 'other_' + Date.now(),
-        plaid_account_id: 'sample_account',
+        simplefin_transaction_id: 'other_' + Date.now(),
+        simplefin_account_id: 'sample_account',
         amount: 45.00,
         date: currentMonth.clone().subtract(12, 'days').format('YYYY-MM-DD'),
         name: 'Property Management Software',
@@ -85,7 +85,7 @@ async function seedSampleData() {
     console.log('\nInserting sample transactions...');
     for (const transaction of sampleTransactions) {
       try {
-        await db.insert('transactions', transaction);
+        await db.insert('expenses', transaction);
         console.log(`  ✓ Added: ${transaction.name} - $${transaction.amount}`);
       } catch (error) {
         if (error.code === '23505') { // Unique constraint violation
@@ -99,7 +99,7 @@ async function seedSampleData() {
     // Calculate summary
     const summary = await db.getMany(
       `SELECT expense_type, COUNT(*) as count, SUM(amount) as total
-       FROM transactions
+       FROM expenses
        GROUP BY expense_type`
     );
 

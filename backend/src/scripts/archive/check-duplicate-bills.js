@@ -56,7 +56,7 @@ async function checkDuplicateBills() {
           AND pr.month = EXTRACT(MONTH FROM t.date)
           AND pr.year = EXTRACT(YEAR FROM t.date)
         ) as has_payment_request
-      FROM transactions t
+      FROM expenses t
       WHERE t.expense_type IN ('electricity', 'water')
       AND t.date >= CURRENT_DATE - INTERVAL '60 days'
       ORDER BY t.date DESC
@@ -74,7 +74,7 @@ async function checkDuplicateBills() {
     console.log('Checking which transactions would trigger new payment requests...\n');
     
     const wouldCreateRequests = await db.query(`
-      SELECT t.* FROM transactions t
+      SELECT t.* FROM expenses t
       WHERE t.expense_type IN ('electricity', 'water')
       AND NOT EXISTS (
         SELECT 1 FROM payment_requests pr 

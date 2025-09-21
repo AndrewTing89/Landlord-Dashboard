@@ -58,7 +58,7 @@ class PDFParserService {
       try {
         // Check if transaction already exists
         const existing = await db.getOne(
-          `SELECT id FROM transactions 
+          `SELECT id FROM expenses 
            WHERE date = $1 AND name = $2 AND amount = $3`,
           [transaction.date, transaction.description, transaction.amount]
         );
@@ -66,9 +66,9 @@ class PDFParserService {
         if (!existing) {
           const expenseType = this.classifyTransaction(transaction);
           
-          await db.insert('transactions', {
-            plaid_transaction_id: `pdf_${Date.now()}_${savedCount}`,
-            plaid_account_id: 'bofa_checking',
+          await db.insert('expenses', {
+            simplefin_transaction_id: `pdf_${Date.now()}_${savedCount}`,
+            simplefin_account_id: 'bofa_checking',
             amount: transaction.amount,
             date: transaction.date,
             name: transaction.description,

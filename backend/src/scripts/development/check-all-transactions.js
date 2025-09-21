@@ -10,7 +10,7 @@ async function checkAllTransactions() {
     // Check all transactions from May 2025 onwards
     const transactions = await db.query(
       `SELECT id, name, merchant_name, amount, date, expense_type, category, subcategory
-       FROM transactions 
+       FROM expenses 
        WHERE date >= '2025-05-01'
        ORDER BY date DESC
        LIMIT 20`
@@ -32,7 +32,7 @@ async function checkAllTransactions() {
     console.log('\n\nLooking for utility-like transactions...');
     const utilityLike = await db.query(
       `SELECT id, name, merchant_name, amount, date, expense_type, category
-       FROM transactions 
+       FROM expenses 
        WHERE date >= '2025-05-01'
        AND (
          LOWER(name) LIKE '%pg&e%' OR 

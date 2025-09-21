@@ -29,7 +29,7 @@ exports.handler = async (event, context) => {
     
     // Get PG&E and Great Oaks Water transactions for the month
     const utilityTransactions = await db.getMany(
-      `SELECT * FROM transactions 
+      `SELECT * FROM expenses 
        WHERE (
          (merchant_name ILIKE '%pg&e%' OR merchant_name ILIKE '%pacific gas%' OR merchant_name ILIKE '%pge%')
          OR (merchant_name ILIKE '%great oaks%' OR merchant_name ILIKE '%water%')

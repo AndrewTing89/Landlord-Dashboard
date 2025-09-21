@@ -35,13 +35,13 @@ async function processAllRawTransactions() {
         const textToMatch = rawTx.description + ' ' + (rawTx.payee || '');
         
         if (pattern.test(textToMatch)) {
-          // Insert into transactions table
+          // INSERT INTO expenses table
           await db.query(
-            `INSERT INTO transactions (
-              plaid_transaction_id, plaid_account_id, amount, date, 
+            `INSERT INTO expenses (
+              simplefin_transaction_id, simplefin_account_id, amount, date, 
               name, merchant_name, expense_type, category, subcategory
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            ON CONFLICT (plaid_transaction_id) DO NOTHING`,
+            ON CONFLICT (simplefin_transaction_id) DO NOTHING`,
             [
               'simplefin_' + rawTx.simplefin_id,
               rawTx.simplefin_account_id,
@@ -79,11 +79,11 @@ async function processAllRawTransactions() {
       if (!matched) {
         // If no rule matches, insert as 'other' for manual review
         await db.query(
-          `INSERT INTO transactions (
-            plaid_transaction_id, plaid_account_id, amount, date, 
+          `INSERT INTO expenses (
+            simplefin_transaction_id, simplefin_account_id, amount, date, 
             name, merchant_name, expense_type, category
           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-          ON CONFLICT (plaid_transaction_id) DO NOTHING`,
+          ON CONFLICT (simplefin_transaction_id) DO NOTHING`,
           [
             'simplefin_' + rawTx.simplefin_id,
             rawTx.simplefin_account_id,
@@ -107,7 +107,7 @@ async function processAllRawTransactions() {
     // Show utility transactions
     const utilityTx = await db.query(
       `SELECT date, name, merchant_name, amount, expense_type 
-       FROM transactions 
+       FROM expenses 
        WHERE expense_type IN ('electricity', 'water')
        AND date >= '2025-06-01'
        ORDER BY date DESC`

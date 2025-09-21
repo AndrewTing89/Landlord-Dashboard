@@ -1,0 +1,14 @@
+[Unit]
+Description=Cloudflare Tunnel for Landlord Dashboard
+After=network.target
+
+[Service]
+TimeoutStartSec=0
+Type=notify
+ExecStart=/usr/local/bin/cloudflared tunnel --config /home/beehiveting/apps/landlord-dashboard/cloudflare-tunnel-config.yml run
+Restart=on-failure
+RestartSec=5s
+User=beehiveting
+
+[Install]
+WantedBy=multi-user.target

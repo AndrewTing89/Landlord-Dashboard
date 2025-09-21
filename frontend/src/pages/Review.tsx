@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import config from '../config';
 import {
   Box,
   Card,
@@ -74,7 +75,7 @@ export default function Review() {
     try {
       setLoading(true);
       
-      let url = `http://localhost:3002/api/review/pending?limit=${rowsPerPage}&offset=${page * rowsPerPage}`;
+      let url = `${config.api.baseURL}/api/review/pending?limit=${rowsPerPage}&offset=${page * rowsPerPage}`;
       if (filterCategory && filterCategory !== 'uncategorized') {
         url += `&type=${filterCategory}`;
       }
@@ -101,7 +102,7 @@ export default function Review() {
 
   const fetchExpenseTypes = async () => {
     try {
-      const response = await fetch('http://localhost:3002/api/review/expense-types');
+      const response = await fetch(`${config.api.baseURL}/api/review/expense-types`);
       const types = await response.json();
       setExpenseTypes(types);
     } catch (err) {
@@ -119,7 +120,7 @@ export default function Review() {
     setProcessing({ ...processing, [transaction.id]: true });
     
     try {
-      const response = await fetch(`http://localhost:3002/api/review/approve/${transaction.id}`, {
+      const response = await fetch(`${config.api.baseURL}/api/review/approve/${transaction.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ expense_type: expenseType }),
@@ -156,7 +157,7 @@ export default function Review() {
     setProcessing({ ...processing, [transaction.id]: true });
     
     try {
-      const response = await fetch(`http://localhost:3002/api/review/exclude/${transaction.id}`, {
+      const response = await fetch(`${config.api.baseURL}/api/review/exclude/${transaction.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: 'Personal expense' }),
@@ -191,7 +192,7 @@ export default function Review() {
     setLoading(true);
     
     try {
-      const response = await fetch('http://localhost:3002/api/review/bulk-approve', {
+      const response = await fetch(`${config.api.baseURL}/api/review/bulk-approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -238,7 +239,7 @@ export default function Review() {
   const fetchGlobalSummary = async () => {
     try {
       console.log('Fetching global summary...');
-      const response = await fetch(`http://localhost:3002/api/review/pending-summary`);
+      const response = await fetch(`${config.api.baseURL}/api/review/pending-summary`);
       if (response.ok) {
         const data = await response.json();
         console.log('Global summary data:', data);

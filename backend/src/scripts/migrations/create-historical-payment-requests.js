@@ -9,7 +9,7 @@ async function createHistoricalPaymentRequests() {
     
     // First, let's find the utility transactions from Jan to Apr 2025
     const utilityTransactions = await db.query(
-      `SELECT * FROM transactions 
+      `SELECT * FROM expenses 
        WHERE date >= '2025-01-01' AND date < '2025-05-01'
        AND (expense_type = 'electricity' OR expense_type = 'water')
        ORDER BY date ASC`

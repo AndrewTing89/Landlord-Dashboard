@@ -47,7 +47,7 @@ class VenmoLinkService {
         return;
       }
       
-      // Calculate total bill amount from transactions
+      // Calculate total bill amount FROM expenses
       const totalAmount = transactions.reduce((sum, tx) => sum + parseFloat(tx.amount), 0);
       
       // Calculate roommate's share
@@ -172,31 +172,24 @@ class VenmoLinkService {
    */
   async processPendingBills() {
     try {
-      // Find bills that don't have payment requests yet
-      const pendingBills = await db.query(`
-        SELECT ub.* 
-        FROM utility_bills ub
-        LEFT JOIN payment_requests pr ON pr.utility_bill_id = ub.id
+      // Find expenses that don't have payment requests yet
+      const pendingExpenses = await db.query(`
+        SELECT e.* 
+        FROM expenses e
+        LEFT JOIN payment_requests pr 
+          ON pr.month = EXTRACT(MONTH FROM e.date)
+          AND pr.year = EXTRACT(YEAR FROM e.date)
+          AND pr.bill_type = e.expense_type
         WHERE pr.id IS NULL
-        AND ub.bill_type IN ('electricity', 'water')
-        AND ub.created_at > NOW() - INTERVAL '30 days'
+        AND e.expense_type IN ('electricity', 'water')
+        AND e.date > NOW() - INTERVAL '30 days'
       `);
       
-      console.log(`Found ${pendingBills.rows.length} bills without payment requests`);
+      console.log(`Found ${pendingExpenses.rows.length} expenses without payment requests`);
       
-      for (const bill of pendingBills.rows) {
-        // Get transactions for this bill
-        const transactions = await db.query(
-          `SELECT * FROM transactions 
-           WHERE expense_type = $1 
-           AND date >= $2::date - INTERVAL '5 days'
-           AND date <= $2::date + INTERVAL '5 days'`,
-          [bill.bill_type, bill.created_at]
-        );
-        
-        if (transactions.rows.length > 0) {
-          await this.createPaymentRequestsForBill(bill, transactions.rows);
-        }
+      for (const expense of pendingExpenses.rows) {
+        // Create payment requests directly from the expense
+        await this.createPaymentRequestsForExpense(expense);
       }
       
       return pendingBills.rows.length;

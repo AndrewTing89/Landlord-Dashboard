@@ -5,7 +5,7 @@ module.exports = {
   // Roommate configurations (excluding yourself as landlord)
   roommates: [
     {
-      name: 'Ushi Lo',
+      name: 'Ushi',
       venmoUsername: '@UshiLo', 
       phoneNumber: process.env.USHI_PHONE || '+1234567890',
       splitRatio: 1/3, // Each roommate pays 1/3 of bills

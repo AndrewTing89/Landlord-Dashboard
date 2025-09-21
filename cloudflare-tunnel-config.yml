@@ -2,9 +2,9 @@
 # This file configures the cloudflared tunnel to route traffic from your domains
 # to local services on this server
 
-# Tunnel credentials (you'll need to update the tunnel ID)
-tunnel: YOUR_TUNNEL_ID_HERE
-credentials-file: /home/beehiveting/.cloudflared/YOUR_TUNNEL_ID.json
+# Tunnel credentials
+tunnel: ebcff4fd-06bb-4771-a84a-21e688b81e77
+credentials-file: /home/beehiveting/.cloudflared/ebcff4fd-06bb-4771-a84a-21e688b81e77.json
 
 # Ingress rules - Routes traffic based on hostname
 ingress:
@@ -36,9 +36,9 @@ ingress:
       noTLSVerify: true
       connectTimeout: 30s
       
-  # Health check endpoint
+  # Health check endpoint (points to API, path handled by application)
   - hostname: health.onlyapps-studio.com
-    service: http://localhost:3002/api/health
+    service: http://localhost:3002
     originRequest:
       noTLSVerify: true
       

@@ -10,7 +10,7 @@ async function checkInvalidTransactions() {
     // Check for null/invalid dates
     const invalidDates = await db.query(
       `SELECT id, name, date, amount, expense_type 
-       FROM transactions 
+       FROM expenses 
        WHERE date IS NULL OR date > CURRENT_DATE + INTERVAL '1 year'
        OR date < '2020-01-01'`
     );
@@ -25,7 +25,7 @@ async function checkInvalidTransactions() {
     // Check for invalid amounts
     const invalidAmounts = await db.query(
       `SELECT id, name, amount, expense_type 
-       FROM transactions 
+       FROM expenses 
        WHERE amount IS NULL OR amount < 0 OR amount > 1000000`
     );
     
@@ -39,7 +39,7 @@ async function checkInvalidTransactions() {
     // Check for very long strings that might cause issues
     const longStrings = await db.query(
       `SELECT id, name, LENGTH(name) as name_length, LENGTH(merchant_name) as merchant_length
-       FROM transactions 
+       FROM expenses 
        WHERE LENGTH(name) > 500 OR LENGTH(merchant_name) > 500`
     );
     
@@ -53,7 +53,7 @@ async function checkInvalidTransactions() {
     // Check for special characters that might break JSON
     const specialChars = await db.query(
       `SELECT id, name, merchant_name 
-       FROM transactions 
+       FROM expenses 
        WHERE name ~ '[\\x00-\\x1F]' OR merchant_name ~ '[\\x00-\\x1F]'
        LIMIT 10`
     );

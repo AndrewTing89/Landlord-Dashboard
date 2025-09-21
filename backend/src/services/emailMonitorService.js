@@ -219,15 +219,13 @@ class EmailMonitorService {
             // Find the original utility expense transaction to adjust
             const utilityExpense = await db.getOne(
               `SELECT t.id, t.amount 
-               FROM transactions t
-               JOIN utility_bills ub ON ub.bill_type = $1
+               FROM expenses t
                WHERE t.expense_type = $1 
-               AND t.date >= ub.created_at::date - INTERVAL '5 days'
-               AND t.date <= ub.created_at::date + INTERVAL '5 days'
-               AND ub.id = $2
-               ORDER BY ABS(t.amount - ub.total_amount) ASC
+               AND EXTRACT(MONTH FROM t.date) = $2
+               AND EXTRACT(YEAR FROM t.date) = $3
+               ORDER BY t.date DESC
                LIMIT 1`,
-              [matchingRequest.bill_type, matchingRequest.utility_bill_id]
+              [matchingRequest.bill_type, matchingRequest.month, matchingRequest.year]
             );
             
             if (utilityExpense) {

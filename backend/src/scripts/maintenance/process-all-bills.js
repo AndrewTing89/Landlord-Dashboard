@@ -17,7 +17,7 @@ async function processAllBills() {
         MAX(date) as last_date,
         COUNT(*) as transaction_count,
         STRING_AGG(DISTINCT merchant_name, ', ') as merchants
-      FROM transactions
+      FROM expenses
       WHERE expense_type IN ('electricity', 'water')
       GROUP BY expense_type, EXTRACT(YEAR FROM date), EXTRACT(MONTH FROM date)
       ORDER BY year DESC, month DESC
@@ -71,7 +71,7 @@ async function processAllBills() {
       if (!existingRequest) {
         // Get the actual transactions for this bill
         const billTransactions = await db.query(
-          `SELECT * FROM transactions 
+          `SELECT * FROM expenses 
            WHERE expense_type = $1 
            AND EXTRACT(YEAR FROM date) = $2 
            AND EXTRACT(MONTH FROM date) = $3`,

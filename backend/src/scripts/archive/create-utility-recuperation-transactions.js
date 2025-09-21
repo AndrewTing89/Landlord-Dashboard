@@ -15,7 +15,7 @@ async function createRecuperationTransactions() {
        WHERE pr.status = 'paid'
        AND pr.paid_date IS NOT NULL
        AND NOT EXISTS (
-         SELECT 1 FROM transactions t
+         SELECT 1 FROM expenses t
          WHERE t.expense_type = 'utility_reimbursement'
          AND t.date = pr.paid_date::date
          AND t.amount = pr.amount
@@ -42,9 +42,9 @@ async function createRecuperationTransactions() {
         const monthName = new Date(2024, request.month - 1).toLocaleString('default', { month: 'short' });
         
         // Create a recuperation transaction
-        const transaction = await db.insert('transactions', {
-          plaid_transaction_id: `recuperation_${request.id}_${Date.now()}`,
-          plaid_account_id: 'manual_entry',
+        const transaction = await db.insert('expenses', {
+          simplefin_transaction_id: `recuperation_${request.id}_${Date.now()}`,
+          simplefin_account_id: 'manual_entry',
           amount: parseFloat(request.amount),
           date: request.paid_date,
           name: `${request.roommate_name} - ${utilityName} Payment`,
@@ -61,7 +61,7 @@ async function createRecuperationTransactions() {
         
         // Also ensure there's a utility adjustment linking to the original expense
         const utilityExpense = await db.getOne(
-          `SELECT id FROM transactions 
+          `SELECT id FROM expenses 
            WHERE expense_type = $1 
            AND date >= $2::date - INTERVAL '5 days'
            AND date <= $2::date + INTERVAL '5 days'
@@ -101,7 +101,7 @@ async function createRecuperationTransactions() {
         expense_type,
         COUNT(*) as count,
         SUM(amount) as total
-       FROM transactions
+       FROM expenses
        WHERE expense_type = 'utility_reimbursement'
        GROUP BY expense_type`
     );

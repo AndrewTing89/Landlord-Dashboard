@@ -50,7 +50,7 @@ class ExcelGenerator {
         expense_type,
         COUNT(*) as transaction_count,
         SUM(amount) as total_amount
-       FROM transactions 
+       FROM expenses 
        WHERE EXTRACT(YEAR FROM date) = $1
        GROUP BY expense_type
        ORDER BY expense_type`,
@@ -112,7 +112,7 @@ class ExcelGenerator {
     const sheet = workbook.addWorksheet('All Transactions');
     
     const transactions = await db.getMany(
-      `SELECT * FROM transactions 
+      `SELECT * FROM expenses 
        WHERE EXTRACT(YEAR FROM date) = $1
        ORDER BY date DESC, id DESC`,
       [year]
@@ -164,7 +164,7 @@ class ExcelGenerator {
         EXTRACT(MONTH FROM date) as month,
         expense_type,
         SUM(amount) as total_amount
-       FROM transactions 
+       FROM expenses 
        WHERE EXTRACT(YEAR FROM date) = $1
        GROUP BY EXTRACT(MONTH FROM date), expense_type
        ORDER BY month, expense_type`,
@@ -252,7 +252,7 @@ class ExcelGenerator {
     
     // Get all expenses (excluding rent income)
     const expenses = await db.getMany(
-      `SELECT * FROM transactions 
+      `SELECT * FROM expenses 
        WHERE EXTRACT(YEAR FROM date) = $1
        AND expense_type != 'rent'
        ORDER BY expense_type, date DESC`,
@@ -336,7 +336,7 @@ class ExcelGenerator {
     
     // Get transactions for the month
     const transactions = await db.getMany(
-      `SELECT * FROM transactions 
+      `SELECT * FROM expenses 
        WHERE EXTRACT(YEAR FROM date) = $1 
        AND EXTRACT(MONTH FROM date) = $2
        ORDER BY date DESC, id DESC`,

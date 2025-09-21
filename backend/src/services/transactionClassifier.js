@@ -129,7 +129,7 @@ class TransactionClassifier {
           COUNT(*) as count,
           SUM(amount) as total_amount,
           AVG(amount) as avg_amount
-         FROM transactions
+         FROM expenses
          WHERE date >= $1 AND date <= $2
          GROUP BY expense_type
          ORDER BY total_amount DESC`,

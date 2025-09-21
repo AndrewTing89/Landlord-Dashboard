@@ -9,7 +9,7 @@ async function fixUtilityTransactions() {
     
     // Fix PG&E transactions
     const pgResult = await db.query(
-      `UPDATE transactions 
+      `UPDATE expenses 
        SET expense_type = 'electricity', 
            category = 'Utilities',
            merchant_name = 'Pacific Gas and Electric Company'
@@ -25,7 +25,7 @@ async function fixUtilityTransactions() {
     
     // Fix water transactions
     const waterResult = await db.query(
-      `UPDATE transactions 
+      `UPDATE expenses 
        SET expense_type = 'water', 
            category = 'Utilities',
            merchant_name = 'Great Oaks Water'

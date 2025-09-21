@@ -158,9 +158,8 @@ class VenmoMatchingService {
         console.log(`🏷️  Found tracking ID in email: ${primaryTrackingId} ${emailRecord.structured_tracking_id ? '(structured)' : '(extracted)'}`);
         
         const trackingMatch = await db.getOne(`
-          SELECT pr.*, pr.roommate_name as recipient_name, ub.bill_type
+          SELECT pr.*, pr.roommate_name as recipient_name, pr.bill_type
           FROM payment_requests pr
-          LEFT JOIN utility_bills ub ON pr.utility_bill_id = ub.id
           WHERE pr.tracking_id = $1
             AND pr.status IN ('pending', 'sent')
         `, [primaryTrackingId]);
@@ -189,9 +188,8 @@ class VenmoMatchingService {
       // Find potential payment request matches - NO TIME WINDOW
       // Just match by amount and name
       const potentialMatches = await db.getMany(`
-        SELECT pr.*, pr.roommate_name as recipient_name, ub.bill_type
+        SELECT pr.*, pr.roommate_name as recipient_name, pr.bill_type
         FROM payment_requests pr
-        LEFT JOIN utility_bills ub ON pr.utility_bill_id = ub.id
         WHERE pr.status = 'pending'
           AND ABS(pr.amount - $1) <= $2
         ORDER BY ABS(pr.amount - $1) ASC, pr.created_at DESC

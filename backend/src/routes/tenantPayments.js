@@ -197,13 +197,12 @@ router.get('/:id', async (req, res) => {
     const payment = await db.getOne(`
       SELECT 
         pr.*,
-        ub.service_address,
-        ub.service_period_start,
-        ub.service_period_end,
-        ub.usage_kwh,
-        ub.usage_gallons
+        NULL as service_address,
+        NULL as service_period_start,
+        NULL as service_period_end,
+        NULL as usage_kwh,
+        NULL as usage_gallons
       FROM payment_requests pr
-      LEFT JOIN utility_bills ub ON pr.utility_bill_id = ub.id
       WHERE pr.id = $1
         AND (pr.tenant_id = $2 OR (pr.tenant_id IS NULL AND pr.roommate_name = $3))
     `, [id, tenantId, req.tenant.fullName]);
@@ -223,9 +222,9 @@ router.get('/:id', async (req, res) => {
           amount,
           status
         FROM payment_requests
-        WHERE utility_bill_id = $1
+        WHERE month = $1 AND year = $2 AND bill_type = $3
         ORDER BY roommate_name
-      `, [payment.utility_bill_id]);
+      `, [payment.month, payment.year, payment.bill_type]);
     }
 
     res.json({

@@ -27,7 +27,7 @@ async function checkRecentTransactions() {
     // Check processed transactions
     const procTx = await db.query(
       `SELECT COUNT(*) as count, MIN(date) as min_date, MAX(date) as max_date
-       FROM transactions 
+       FROM expenses 
        WHERE date >= '2025-06-01'`
     );
     
@@ -40,7 +40,7 @@ async function checkRecentTransactions() {
     // Check specific utility transactions
     const utilityTx = await db.query(
       `SELECT date, name, merchant_name, amount, expense_type 
-       FROM transactions 
+       FROM expenses 
        WHERE date >= '2025-06-01' 
        AND (expense_type IN ('electricity', 'water') OR 
             LOWER(name) LIKE '%pgande%' OR 

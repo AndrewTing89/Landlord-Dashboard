@@ -523,12 +523,9 @@ app.post('/api/payment-requests/:id/mark-paid', async (req, res) => {
     await db.query('BEGIN');
     
     try {
-      // Get the payment request details with utility bill info
+      // Get the payment request details
       const paymentRequest = await db.getOne(
-        `SELECT pr.*, ub.id as utility_bill_id, ub.created_at as bill_date
-         FROM payment_requests pr
-         LEFT JOIN utility_bills ub ON pr.utility_bill_id = ub.id
-         WHERE pr.id = $1`,
+        'SELECT * FROM payment_requests WHERE id = $1',
         [id]
       );
       
@@ -543,75 +540,45 @@ app.post('/api/payment-requests/:id/mark-paid', async (req, res) => {
         ['paid', id]
       );
       
-      // For utility bills, find the original expense and create adjustment
-      if (paymentRequest.bill_type !== 'rent') {
-        const utilityExpense = await db.getOne(
-          `SELECT id, amount FROM expenses 
-           WHERE expense_type = $1 
-           AND date >= $2::date - INTERVAL '5 days'
-           AND date <= $2::date + INTERVAL '5 days'
-           ORDER BY ABS(amount - (SELECT total_amount FROM utility_bills WHERE id = $3)) ASC
-           LIMIT 1`,
-          [paymentRequest.bill_type, paymentRequest.bill_date || paymentRequest.created_at, paymentRequest.utility_bill_id]
-        );
-        
-        if (utilityExpense) {
-          // Create an adjustment record to track the reimbursement
-          await db.insert('utility_adjustments', {
-            expense_id: utilityExpense.id,
-            payment_request_id: paymentRequest.id,
-            adjustment_amount: parseFloat(paymentRequest.amount),
-            adjustment_type: 'reimbursement',
-            description: `Roommate payment for ${paymentRequest.bill_type} bill`,
-            applied_date: new Date()
-          });
-          
-          console.log(`Created adjustment of $${paymentRequest.amount} for expense ${utilityExpense.id}`);
-        } else {
-          console.log('Warning: Could not find matching utility expense');
-        }
-      }
-      
       // Create income record for both rent and utility payments
       const incomeType = paymentRequest.bill_type === 'rent' ? 'rent' : 'utility_reimbursement';
       const description = paymentRequest.bill_type === 'rent' 
         ? `Rent Payment - ${paymentRequest.roommate_name}`
-        : `${paymentRequest.roommate_name} - ${paymentRequest.bill_type === 'electricity' ? 'PG&E' : 'Water'} Payment`;
+        : `${paymentRequest.roommate_name} - ${paymentRequest.bill_type === 'electricity' ? 'PG&E' : 
+            paymentRequest.bill_type === 'water' ? 'Water' : 
+            paymentRequest.bill_type === 'internet' ? 'Internet' : 
+            paymentRequest.bill_type} Payment`;
       
       // Use the month/year from the payment request for proper attribution
-      // For utilities, this ensures income matches the expense month
-      // For rent, it goes to the month it was for (e.g., March rent paid in August still goes to March)
       let incomeDate;
       if (paymentRequest.month && paymentRequest.year) {
-        // Use the 15th of the month for utilities, 1st for rent
-        const day = paymentRequest.bill_type === 'rent' ? 1 : 15;
-        incomeDate = new Date(paymentRequest.year, paymentRequest.month - 1, day);
+        // Use the 15th of the month for consistent date handling
+        incomeDate = new Date(paymentRequest.year, paymentRequest.month - 1, 15);
       } else {
-        // Fallback to current date if month/year not set (shouldn't happen)
+        // Fallback to current date if month/year not set
         console.warn(`Payment request ${id} missing month/year, using current date`);
         incomeDate = new Date();
       }
       
+      // Insert into transactions table via income view
+      // The income view's INSERT rule will properly map to transactions table
       await db.insert('income', {
-        date: incomeDate, // Keep the old date column for backwards compatibility
-        amount: parseFloat(paymentRequest.amount), // Positive for income
+        date: incomeDate,
+        amount: parseFloat(paymentRequest.amount),
         description: description,
         income_type: incomeType,
-        source: 'payment_request',
+        source_type: 'venmo',
         payment_request_id: paymentRequest.id,
         payer_name: paymentRequest.roommate_name,
-        income_month: incomeDate, // The month this income is attributed to
-        received_date: new Date(), // When we marked it as paid
-        recorded_date: new Date(), // When we created this record
-        basis_type: 'accrual', // Default to accrual basis
-        notes: `Payment request #${paymentRequest.id} marked as paid on ${new Date().toISOString().split('T')[0]}`
+        income_month: incomeDate,
+        received_date: new Date(),
+        notes: `Payment request #${paymentRequest.id} - ${paymentRequest.tracking_id}`
       });
       
       console.log(`Created income record for ${paymentRequest.roommate_name} - ${incomeType}`);
       
-      
       await db.query('COMMIT');
-      res.json({ success: true, message: 'Payment marked as paid with expense adjustment' });
+      res.json({ success: true, message: 'Payment marked as paid successfully' });
     } catch (error) {
       await db.query('ROLLBACK');
       throw error;
@@ -1191,10 +1158,10 @@ app.post('/api/review/approve/:id', async (req, res) => {
     await db.query('BEGIN');
     
     try {
-      // Insert into main transactions table
-      await db.insert('transactions', {
-        plaid_transaction_id: `simplefin_${rawTx.simplefin_id}`,
-        plaid_account_id: rawTx.simplefin_account_id,
+      // Insert into main expenses table
+      await db.insert('expenses', {
+        simplefin_transaction_id: `simplefin_${rawTx.simplefin_id}`,
+        simplefin_account_id: rawTx.simplefin_account_id,
         amount: Math.abs(rawTx.amount),
         date: rawTx.posted_date,
         name: rawTx.description,

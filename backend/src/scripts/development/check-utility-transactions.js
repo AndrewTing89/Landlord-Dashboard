@@ -10,7 +10,7 @@ async function checkUtilityTransactions() {
     // Check all utility transactions from May 2025 onwards
     const transactions = await db.query(
       `SELECT id, name, merchant_name, amount, date, expense_type 
-       FROM transactions 
+       FROM expenses 
        WHERE expense_type = 'utility' 
        AND date >= '2025-05-01'
        ORDER BY date DESC`
