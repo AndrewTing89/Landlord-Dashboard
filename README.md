@@ -49,6 +49,7 @@ The Landlord Dashboard automates rental property management by:
 Comprehensive documentation is available in the `/documentation` folder:
 
 - **[ARCHITECTURE.md](documentation/ARCHITECTURE.md)** - System design and components
+- **[SYSTEM-FLOWS.md](documentation/SYSTEM-FLOWS.md)** - Detailed step-by-step system flows
 - **[DATA-FLOW.md](documentation/DATA-FLOW.md)** - How money and data move through the system
 - **[DEVELOPER-GUIDE.md](documentation/DEVELOPER-GUIDE.md)** - Setup and development workflow
 - **[OPERATIONS.md](documentation/OPERATIONS.md)** - Daily operations and procedures
