@@ -1,5 +1,7 @@
 # Landlord Dashboard - Troubleshooting Guide
 
+**Last Updated:** September 21, 2025 8:45 AM UTC
+
 This guide provides solutions to common issues encountered in the Landlord Dashboard system. For each problem, we provide the error symptoms, root causes, and step-by-step solutions.
 
 ## Table of Contents

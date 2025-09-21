@@ -1,5 +1,7 @@
 # Landlord Dashboard - Detailed System Flows
 
+**Last Updated:** September 21, 2025 8:45 AM UTC
+
 ## 1. 🏦 BANK TRANSACTION DATA FLOW
 
 ### Step 1: Daily Sync Initiation

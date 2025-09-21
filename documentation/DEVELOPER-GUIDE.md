@@ -1,5 +1,7 @@
 # Landlord Dashboard - Developer Guide
 
+**Last Updated:** September 21, 2025 8:45 AM UTC
+
 This guide provides comprehensive instructions for setting up and developing the Landlord Dashboard system locally. Whether you're a new developer joining the project or an experienced developer looking to contribute, this guide will get you up and running quickly.
 
 ## Table of Contents

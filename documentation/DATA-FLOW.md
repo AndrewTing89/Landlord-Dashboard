@@ -1,5 +1,7 @@
 # Landlord Dashboard Data Flow Documentation
 
+**Last Updated:** September 21, 2025 8:45 AM UTC
+
 This document provides a comprehensive overview of how data flows through the Landlord Dashboard system, from bank transactions to tax reporting. The system automates rental property financial management with sophisticated ETL processing, payment tracking, and income attribution.
 
 ## Table of Contents
